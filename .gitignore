@@ -87,11 +87,13 @@ cython_debug/
 *.tsv
 *.npz
 *.npy
+*.jar
 runs/
 logs/
 checkpoints/
 output/
 models/
+
 
 # Environment
 .env
