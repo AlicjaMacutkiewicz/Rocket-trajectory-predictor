@@ -116,7 +116,6 @@ def init_rocket_from_JSON(path_to_file, drag_curve_csv, thrust_source_csv):
             )
     return rocket
 
-
 def init_environment_from_JSON(path_to_file):
     with open(path_to_file, 'r', encoding='utf-8')as file:
         data= json.load(file)
@@ -129,6 +128,7 @@ def init_environment_from_JSON(path_to_file):
                 elevation=env_data["elevation"]
             )
     return env
+
 def init_flight_from_JSON(path_to_file, rocket, environment):
     with open(path_to_file, 'r', encoding='utf-8')as file:
         data= json.load(file)
@@ -141,7 +141,6 @@ def init_flight_from_JSON(path_to_file, rocket, environment):
                rail_length=flight_data["rail_length"]
             )
     return temp
-
 
 def init_accelerometer_from_JSON(path_to_file, name):
     with open(path_to_file, 'r', encoding='utf-8')as file:
@@ -189,13 +188,13 @@ def add_gyro_to_rocket(rocket , gyro_list):
         #TODO: replace 1 
         rocket.add_sensor(g , 1)
     return rocket
+
 def add_acc_to_rocket(rocket , acc_list):
     acc_list.sort(key= lambda x: x.measurement_range)
     for a in acc_list:
         #TODO: replace 1 
         rocket.add_sensor(a , 1)
     return rocket
-
 
 def generator(N, rocket, environment, flight):
     for i in tqdm.tqdm(range(N), "Siupi dupi Grzesiu"):
@@ -232,17 +231,17 @@ def generator(N, rocket, environment, flight):
             real_y = np.array([current_flight.ay(t) for t in czasy])
             real_z = np.array([current_flight.az(t) for t in czasy])
             
-            warunki_x = [np.abs(real_x) < 19.613, np.abs(real_x) < 39.227, np.abs(real_x) < 78.453]
-            warunki_y = [np.abs(real_y) < 19.613, np.abs(real_y) < 39.227, np.abs(real_y) < 78.453]
-            warunki_z = [np.abs(real_z) < 19.613, np.abs(real_z) < 39.227, np.abs(real_z) < 78.453]
+            condition_x = [np.abs(real_x) < 19.613, np.abs(real_x) < 39.227, np.abs(real_x) < 78.453]
+            condition_y = [np.abs(real_y) < 19.613, np.abs(real_y) < 39.227, np.abs(real_y) < 78.453]
+            condition_z = [np.abs(real_z) < 19.613, np.abs(real_z) < 39.227, np.abs(real_z) < 78.453]
             
-            wybory_x = [all_accels_df["LSM9DS1_acc_2g_X"], all_accels_df["LSM9DS1_acc_4g_X"], all_accels_df["LSM9DS1_acc_8g_X"]]
-            wybory_y = [all_accels_df["LSM9DS1_acc_2g_Y"], all_accels_df["LSM9DS1_acc_4g_Y"], all_accels_df["LSM9DS1_acc_8g_Y"]]
-            wybory_z = [all_accels_df["LSM9DS1_acc_2g_Z"], all_accels_df["LSM9DS1_acc_4g_Z"], all_accels_df["LSM9DS1_acc_8g_Z"]]
+            choice_x = [all_accels_df["LSM9DS1_acc_2g_X"], all_accels_df["LSM9DS1_acc_4g_X"], all_accels_df["LSM9DS1_acc_8g_X"]]
+            choice_y = [all_accels_df["LSM9DS1_acc_2g_Y"], all_accels_df["LSM9DS1_acc_4g_Y"], all_accels_df["LSM9DS1_acc_8g_Y"]]
+            choice_z = [all_accels_df["LSM9DS1_acc_2g_Z"], all_accels_df["LSM9DS1_acc_4g_Z"], all_accels_df["LSM9DS1_acc_8g_Z"]]
             
-            all_accels_df["Best_Acc_X"] = np.select(warunki_x, wybory_x, default=all_accels_df["LSM9DS1_acc_16g_X"])
-            all_accels_df["Best_Acc_Y"] = np.select(warunki_y, wybory_y, default=all_accels_df["LSM9DS1_acc_16g_Y"])
-            all_accels_df["Best_Acc_Z"] = np.select(warunki_z, wybory_z, default=all_accels_df["LSM9DS1_acc_16g_Z"])
+            all_accels_df["Best_Acc_X"] = np.select(condition_x, choice_x, default=all_accels_df["LSM9DS1_acc_16g_X"])
+            all_accels_df["Best_Acc_Y"] = np.select(condition_y, choice_y, default=all_accels_df["LSM9DS1_acc_16g_Y"])
+            all_accels_df["Best_Acc_Z"] = np.select(condition_z, choice_z, default=all_accels_df["LSM9DS1_acc_16g_Z"])
             
             final_df = all_accels_df[["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z"]]
             final_df.to_csv(f"output/flight_{i}_best_sensors.csv", index_label="Time")
