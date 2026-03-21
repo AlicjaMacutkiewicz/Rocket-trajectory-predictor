@@ -33,7 +33,7 @@
     "consider_gravity": true,
     "orientation": [0.0, 0.0, 0.0]
   },
-  "LSM9DS1_acc_8g" :{
+"LSM9DS1_acc_8g": {
     "name": "LSM9DS1_acc_8g",
     "sampling_rate": 952.0,
     "measurement_range": 78.453,
@@ -50,7 +50,7 @@
     "consider_gravity": true,
     "orientation": [0.0, 0.0, 0.0]
   },
-  "LSM9DS1_acc_16g" :{
+"LSM9DS1_acc_16g": {
     "name": "LSM9DS1_acc_16g",
     "sampling_rate": 952.0,
     "measurement_range": 156.906,

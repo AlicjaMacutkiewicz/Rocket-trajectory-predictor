@@ -142,25 +142,13 @@ def init_flight_from_JSON(path_to_file, rocket, environment):
             )
     return temp
 
-def init_sensors_from_JSON(path_to_file) :
+
+def init_accelerometer_from_JSON(path_to_file, name):
     with open(path_to_file, 'r', encoding='utf-8')as file:
         data= json.load(file)
-    barometer_data = data["barometer"] 
-    barometer = Barometer(
-        sampling_rate=barometer_data["sampling_rate"],
-        measurement_range=barometer_data["measurement_range"],
-        resolution=barometer_data["resolution"],
-        noise_density=barometer_data["noise_density"],
-        noise_variance=barometer_data["noise_variance"],
-        random_walk_density=barometer_data["random_walk_density"],
-        random_walk_variance=barometer_data["random_walk_variance"],
-        constant_bias=barometer_data["constant_bias"],
-        operating_temperature=barometer_data["operating_temperature"],
-        temperature_bias=barometer_data["temperature_bias"]
-    )
-    
-    accel_data = data["accelerometer"]
+    accel_data = data[name]
     accelerometer = Accelerometer(
+        name=accel_data["name"],
         sampling_rate=accel_data["sampling_rate"],
         measurement_range=accel_data["measurement_range"],
         resolution=accel_data["resolution"],
@@ -173,8 +161,14 @@ def init_sensors_from_JSON(path_to_file) :
         temperature_bias=accel_data["temperature_bias"],
         orientation=accel_data["orientation"]
     )
-    gyro_data = data["gyroscope"]
+    return accelerometer
+
+def init_gyroscope_from_JSON(path_to_file, name):
+    with open(path_to_file, 'r', encoding='utf-8')as file:
+        data= json.load(file)
+    gyro_data = data[name]
     gyroscope = Gyroscope(
+        name= gyro_data["name"],
         sampling_rate=gyro_data["sampling_rate"],
         measurement_range=gyro_data["measurement_range"],
         resolution=gyro_data["resolution"],
@@ -187,36 +181,71 @@ def init_sensors_from_JSON(path_to_file) :
         temperature_bias=gyro_data["temperature_bias"],
         orientation=gyro_data["orientation"]
     )
-    return (barometer,accelerometer,gyroscope) 
+    return gyroscope
+
+def add_gyro_to_rocket(rocket , gyro_list):
+    gyro_list.sort(key= lambda x: x.measurement_range)
+    for g in gyro_list:
+        #TODO: replace 1 
+        rocket.add_sensor(g , 1)
+    return rocket
+def add_acc_to_rocket(rocket , acc_list):
+    acc_list.sort(key= lambda x: x.measurement_range)
+    for a in acc_list:
+        #TODO: replace 1 
+        rocket.add_sensor(a , 1)
+    return rocket
+
 
 def generator(N, rocket, environment, flight):
-    for i in tqdm.tqdm(range(N), "Siupi duping grzesia"):
-        current_flight =flight
-        file_name = f"output/flighjt_{i}.out"
+    for i in tqdm.tqdm(range(N), "Siupi dupi Grzesiu"):
+        current_flight = Flight(
+                heading=flight.heading,
+                environment=environment,
+                rocket=rocket,
+                rail_length=flight.rail_length
+                )
+        file_name = f"output/flight_{i}.out"
         with open(file_name, 'w+') as file:
-            for sample in current_flight.solution:
-                file.write(rp_solution_arr_str(sample) + '\n')
-        sensor_dfs = []
+             for sample in current_flight.solution:
+                 file.write(rp_solution_arr_str(sample) + '\n')
+        
+        accel_data = []
+
         for sensor_tuple in rocket.sensors:
-            sensor = sensor_tuple.component 
-            name = sensor.__class__.__name__
-            if name == "Barometer":
-                cols = ["Time", "Baro_Pressure"] 
-            elif name == "Accelerometer":
-                cols = ["Time", "Acc_X", "Acc_Y", "Acc_Z"]
-            elif name == "Gyroscope":
-                cols = ["Time", "Gyro_X", "Gyro_Y", "Gyro_Z"]
-            else:
-                num_measurements = len(sensor.measured_data[0]) - 1
-                cols = ["Time"] + [f"{name}_{j}" for j in range(num_measurements)]
-            df = pd.DataFrame(sensor.measured_data, columns=cols)
-            df.set_index("Time", inplace=True)
-            sensor_dfs.append(df)
-        if sensor_dfs:
-            final_telemetry_df = pd.concat(sensor_dfs, axis=1)
-            final_telemetry_df.sort_index(inplace=True)
-            file_name_csv = f"output/flight_{i}_sensors.out"
-            final_telemetry_df.to_csv(file_name_csv, index_label="Time")
+            sensor = sensor_tuple.component
+            if isinstance(sensor , Accelerometer):
+                cols = ["Time", f"{sensor.name}_X", f"{sensor.name}_Y" , f"{sensor.name}_Z"]
+                frame = pd.DataFrame(sensor.measured_data , columns=cols)
+                frame.set_index("Time", inplace=True)
+
+                accel_data.append({
+                    "df": frame,
+                     "range": sensor.measurement_range,
+                     "name": sensor.name
+                    })
+        if accel_data:
+            all_accels_df = pd.concat([item["df"] for item in accel_data], axis=1)
+            czasy = all_accels_df.index.values
+            
+            real_x= np.array([current_flight.ax(t) for t in czasy])
+            real_y = np.array([current_flight.ay(t) for t in czasy])
+            real_z = np.array([current_flight.az(t) for t in czasy])
+            
+            warunki_x = [np.abs(real_x) < 19.613, np.abs(real_x) < 39.227, np.abs(real_x) < 78.453]
+            warunki_y = [np.abs(real_y) < 19.613, np.abs(real_y) < 39.227, np.abs(real_y) < 78.453]
+            warunki_z = [np.abs(real_z) < 19.613, np.abs(real_z) < 39.227, np.abs(real_z) < 78.453]
+            
+            wybory_x = [all_accels_df["LSM9DS1_acc_2g_X"], all_accels_df["LSM9DS1_acc_4g_X"], all_accels_df["LSM9DS1_acc_8g_X"]]
+            wybory_y = [all_accels_df["LSM9DS1_acc_2g_Y"], all_accels_df["LSM9DS1_acc_4g_Y"], all_accels_df["LSM9DS1_acc_8g_Y"]]
+            wybory_z = [all_accels_df["LSM9DS1_acc_2g_Z"], all_accels_df["LSM9DS1_acc_4g_Z"], all_accels_df["LSM9DS1_acc_8g_Z"]]
+            
+            all_accels_df["Best_Acc_X"] = np.select(warunki_x, wybory_x, default=all_accels_df["LSM9DS1_acc_16g_X"])
+            all_accels_df["Best_Acc_Y"] = np.select(warunki_y, wybory_y, default=all_accels_df["LSM9DS1_acc_16g_Y"])
+            all_accels_df["Best_Acc_Z"] = np.select(warunki_z, wybory_z, default=all_accels_df["LSM9DS1_acc_16g_Z"])
+            
+            final_df = all_accels_df[["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z"]]
+            final_df.to_csv(f"output/flight_{i}_best_sensors.csv", index_label="Time")
 
 def main():
     json_path = "../../source_model/APEX_OUTPUT/parameters.json"
@@ -224,12 +253,15 @@ def main():
     thrust_path= "../../source_model/APEX_OUTPUT/thrust_source.csv"
     rocket = init_rocket_from_JSON(json_path, drag_path , thrust_path)
     environment = init_environment_from_JSON("config.json")
-    (barometer,accelerometer,gyroscope)  = init_sensors_from_JSON("config.json")
-    rocket.add_sensor(gyroscope , 1)
-    rocket.add_sensor(accelerometer, 1)
-    rocket.add_sensor(barometer, 1)
+    acc_list = [] 
+    acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_2g"))
+    acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_4g"))
+    acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_8g"))
+    acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_16g"))
+    
     flight = init_flight_from_JSON("config.json",rocket,environment)
+    add_acc_to_rocket(rocket , acc_list)
     generator(10,rocket , environment , flight)
-
+    
 if __name__=="__main__":
     main()
