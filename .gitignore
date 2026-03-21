@@ -88,6 +88,7 @@ cython_debug/
 *.npy
 *.jar
 *.out
+*.parquet
 output/
 runs/
 logs/

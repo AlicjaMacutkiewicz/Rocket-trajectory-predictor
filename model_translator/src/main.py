@@ -1,13 +1,11 @@
-import os
 import matplotlib.pyplot as plt
-import numpy as np
 import json
-import string
+import pandas as pd
 import tqdm
 from enum import IntEnum
-import pandas as pd
 from rocketpy import Environment, SolidMotor, Rocket, Flight , Barometer , Accelerometer, Gyroscope
-
+from single_simulation import run_single_simulation
+from pathos.multiprocessing import ProcessPool
 
 class LogLevel(IntEnum):
     INFO = 1
@@ -25,20 +23,6 @@ def print_warning(msg):
     if C_CURRENT_LOG_LEVEL>= LogLevel.WARNING:
         print("WARNING: " + msg + '\n')
 
-
-# @BRIEF
-# cretes string based on rp.solution_array, without np.float type signature
-# @ARGUMENTS: 
-#       data -> rp.solution_array instance
-# @RETURN
-#       msg -> string representation of given array
-def rp_solution_arr_str(data):
-    msg = '['
-    for itr in data:
-        msg += f"{str(itr)},"
-    msg += ']'
-    return msg
-
 # @BRIEF
 # Initializes rocket with data found in give JSON file
 # @ARGUMENTS: 
@@ -47,6 +31,7 @@ def rp_solution_arr_str(data):
 #     thrust_source_csv -> STRING representing path to CSV file
 # @RETURN
 #     rocket -> Initialized rocketpy::Rocket class 
+
 def init_rocket_from_JSON(path_to_file, drag_curve_csv, thrust_source_csv):
     with open(path_to_file, 'r', encoding='utf-8')as file:
         data= json.load(file)
@@ -196,55 +181,21 @@ def add_acc_to_rocket(rocket , acc_list):
         rocket.add_sensor(a , 1)
     return rocket
 
-def generator(N, rocket, environment, flight):
-    for i in tqdm.tqdm(range(N), "Siupi dupi Grzesiu"):
-        current_flight = Flight(
-                heading=flight.heading,
-                environment=environment,
-                rocket=rocket,
-                rail_length=flight.rail_length
-                )
-        file_name = f"output/flight_{i}.out"
-        with open(file_name, 'w+') as file:
-             for sample in current_flight.solution:
-                 file.write(rp_solution_arr_str(sample) + '\n')
-        
-        accel_data = []
+def parallel_generator(N, rocket, environment, flight):
+    indices = range(N) 
+    def worker(i):
+        return run_single_simulation(i, rocket, environment, flight)
 
-        for sensor_tuple in rocket.sensors:
-            sensor = sensor_tuple.component
-            if isinstance(sensor , Accelerometer):
-                cols = ["Time", f"{sensor.name}_X", f"{sensor.name}_Y" , f"{sensor.name}_Z"]
-                frame = pd.DataFrame(sensor.measured_data , columns=cols)
-                frame.set_index("Time", inplace=True)
+    with ProcessPool() as pool:
+        results = list(tqdm.tqdm(pool.imap(worker, indices), total=N, desc="Siupi dupi Grzesiu dawaj"))
 
-                accel_data.append({
-                    "df": frame,
-                     "range": sensor.measurement_range,
-                     "name": sensor.name
-                    })
-        if accel_data:
-            all_accels_df = pd.concat([item["df"] for item in accel_data], axis=1)
-            czasy = all_accels_df.index.values
-            
-            real_x= np.array([current_flight.ax(t) for t in czasy])
-            real_y = np.array([current_flight.ay(t) for t in czasy])
-            real_z = np.array([current_flight.az(t) for t in czasy])
-            
-            condition_x = [np.abs(real_x) < 19.613, np.abs(real_x) < 39.227, np.abs(real_x) < 78.453]
-            condition_y = [np.abs(real_y) < 19.613, np.abs(real_y) < 39.227, np.abs(real_y) < 78.453]
-            condition_z = [np.abs(real_z) < 19.613, np.abs(real_z) < 39.227, np.abs(real_z) < 78.453]
-            
-            choice_x = [all_accels_df["LSM9DS1_acc_2g_X"], all_accels_df["LSM9DS1_acc_4g_X"], all_accels_df["LSM9DS1_acc_8g_X"]]
-            choice_y = [all_accels_df["LSM9DS1_acc_2g_Y"], all_accels_df["LSM9DS1_acc_4g_Y"], all_accels_df["LSM9DS1_acc_8g_Y"]]
-            choice_z = [all_accels_df["LSM9DS1_acc_2g_Z"], all_accels_df["LSM9DS1_acc_4g_Z"], all_accels_df["LSM9DS1_acc_8g_Z"]]
-            
-            all_accels_df["Best_Acc_X"] = np.select(condition_x, choice_x, default=all_accels_df["LSM9DS1_acc_16g_X"])
-            all_accels_df["Best_Acc_Y"] = np.select(condition_y, choice_y, default=all_accels_df["LSM9DS1_acc_16g_Y"])
-            all_accels_df["Best_Acc_Z"] = np.select(condition_z, choice_z, default=all_accels_df["LSM9DS1_acc_16g_Z"])
-            
-            final_df = all_accels_df[["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z"]]
-            final_df.to_csv(f"output/flight_{i}_best_sensors.csv", index_label="Time")
+    #for parquet data saving and packing 
+    # |
+    # print("Pakowanko...")
+    # master_df = pd.concat(results)
+    # master_df.reset_index(inplace=True)
+    # master_df.to_parquet("dataset_packed.parquet", index=True)
+    # |
 
 def main():
     json_path = "../../source_model/APEX_OUTPUT/parameters.json"
@@ -260,7 +211,7 @@ def main():
     
     flight = init_flight_from_JSON("config.json",rocket,environment)
     add_acc_to_rocket(rocket , acc_list)
-    generator(10,rocket , environment , flight)
+    parallel_generator(3,rocket , environment , flight)
     
 if __name__=="__main__":
     main()
