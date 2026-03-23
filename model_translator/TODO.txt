@@ -5,7 +5,7 @@ Do zrobienia:
         - thermometer.JSON (temperatura)
         - gnss_velocity.JSON (GNSS, prędkość)
         - barometer.JSON (ciśnienie)
-    2. Dodać model atmosfery (zmienne warunki dla każdego z lotów)
+(PAWEL)    2. Dodać model atmosfery (zmienne warunki dla każdego z lotów)
     3. Zmieniać parametry pracy silnika (zakłócenia, wady fabryczne - ok. 15% odchyłu brzmi sensownie)
     4. Sprawdzić możliwości zmiany pozostałych warunków w trakcie lotów (i je zaimplementować)
     5. Dodać funkcję odrzutu (usunięcia) losowo punktów na wyjściu
