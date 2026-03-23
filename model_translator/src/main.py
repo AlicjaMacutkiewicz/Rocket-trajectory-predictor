@@ -6,6 +6,7 @@ from enum import IntEnum
 from rocketpy import Environment, SolidMotor, Rocket, Flight , Barometer , Accelerometer, Gyroscope
 from single_simulation import run_single_simulation
 from pathos.multiprocessing import ProcessPool
+import os
 
 class LogLevel(IntEnum):
     INFO = 1
@@ -198,20 +199,21 @@ def parallel_generator(N, rocket, environment, flight):
     # |
 
 def main():
-    json_path = "../../source_model/APEX_OUTPUT/parameters.json"
-    drag_path= "../../source_model/APEX_OUTPUT/drag_curve.csv"
-    thrust_path= "../../source_model/APEX_OUTPUT/thrust_source.csv"
+    dir = os.path.dirname(__file__)
+    json_path = os.path.join(dir, "../../source_model/APEX_OUTPUT/parameters.json")
+    drag_path= os.path.join(dir, "../../source_model/APEX_OUTPUT/drag_curve.csv")
+    thrust_path= os.path.join(dir, "../../source_model/APEX_OUTPUT/thrust_source.csv")
     rocket = init_rocket_from_JSON(json_path, drag_path , thrust_path)
-    environment = init_environment_from_JSON("config.json")
+    environment = init_environment_from_JSON(os.path.join(dir, "config.json"))
     acc_list = [] 
-    acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_2g"))
-    acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_4g"))
-    acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_8g"))
-    acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_16g"))
-    acc_list.append(init_gyroscope_from_JSON("../sensors/gyroscope.json","LSM9DS1_gyro_245dps"))
-    acc_list.append(init_gyroscope_from_JSON("../sensors/gyroscope.json","LSM9DS1_gyro_500dps"))
-    acc_list.append(init_gyroscope_from_JSON("../sensors/gyroscope.json","LSM9DS1_gyro_2000dps"))
-    flight = init_flight_from_JSON("config.json",rocket,environment)
+    acc_list.append(init_accelerometer_from_JSON(os.path.join(dir, "../sensors/accelerometer.json"),"LSM9DS1_acc_2g"))
+    acc_list.append(init_accelerometer_from_JSON(os.path.join(dir, "../sensors/accelerometer.json"),"LSM9DS1_acc_4g"))
+    acc_list.append(init_accelerometer_from_JSON(os.path.join(dir, "../sensors/accelerometer.json"),"LSM9DS1_acc_8g"))
+    acc_list.append(init_accelerometer_from_JSON(os.path.join(dir, "../sensors/accelerometer.json"),"LSM9DS1_acc_16g"))
+    acc_list.append(init_gyroscope_from_JSON(os.path.join(dir, "../sensors/gyroscope.json"),"LSM9DS1_gyro_245dps"))
+    acc_list.append(init_gyroscope_from_JSON(os.path.join(dir, "../sensors/gyroscope.json"),"LSM9DS1_gyro_500dps"))
+    acc_list.append(init_gyroscope_from_JSON(os.path.join(dir, "../sensors/gyroscope.json"),"LSM9DS1_gyro_2000dps"))
+    flight = init_flight_from_JSON(os.path.join(dir, "config.json"),rocket,environment)
     add_acc_to_rocket(rocket , acc_list)
     parallel_generator(3,rocket , environment , flight)
     

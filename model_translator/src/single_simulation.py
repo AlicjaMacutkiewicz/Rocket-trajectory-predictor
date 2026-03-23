@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from rocketpy import Flight , Accelerometer, Gyroscope
+import os
 
 # @BRIEF
 # cretes string based on rp.solution_array, without np.float type signature
@@ -38,7 +39,8 @@ def run_single_simulation(i, rocket, environment, flight):
             )
     #for parquet data saving and packing (comment out lines below)
     # |
-    file_name = f"output/flight_{i}.out"
+    dir = os.path.dirname(__file__)
+    file_name = os.path.join(dir, f"output/flight_{i}.out")
     with open(file_name, 'w+') as file:
             for sample in current_flight.solution:
                 file.write(rp_solution_arr_str(sample) + '\n')
@@ -83,7 +85,7 @@ def run_single_simulation(i, rocket, environment, flight):
         final_cols = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z", 
                       "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z"]
         final_df = all_accels_df[final_cols].copy()
-        final_df.to_csv(f"output/flight_{i}_best_sensors.csv", index_label="Time")
+        final_df.to_csv(os.path.join(dir, f"output/flight_{i}_best_sensors.csv"), index_label="Time")
         final_df['flight_id'] = i 
 
         #for parquet data saving and packing 
