@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from rocketpy import Flight , Accelerometer, Gyroscope
+from rocketpy import Flight , Accelerometer, Gyroscope, GnssReceiver
 
 # @BRIEF
 # cretes string based on rp.solution_array, without np.float type signature
@@ -28,6 +28,10 @@ def get_best_angular_velocity(real_vals, suffix, all_accels_df, thresholds):
     cond = [np.abs(real_vals_dps) < t for t in thresholds]
     choices = [all_accels_df[f"LSM9DS1_gyro_{dps}dps_{suffix}"] for dps in [245, 500]]
     return np.select(cond, choices, default=all_accels_df[f"LSM9DS1_gyro_2000dps_{suffix}"])
+
+def get_gnss_value(all_data_df, coordinate, suffix=""):
+    column_name = f"GNSS_{coordinate}_{suffix}" if suffix else f"GNSS_{coordinate}"
+    return all_data_df[column_name]
 
 def run_single_simulation(i, rocket, environment, flight):
     current_flight = Flight(
@@ -57,6 +61,17 @@ def run_single_simulation(i, rocket, environment, flight):
                     "range": sensor.measurement_range,
                     "name": sensor.name
                 })
+        elif isinstance(sensor , (GnssReceiver)):
+            cols = ["Time", f"{sensor.name}_Lat", f"{sensor.name}_Lon", f"{sensor.name}_Alt"]
+            gnss_data_matrix = np.array(sensor.measured_data)
+            frame = pd.DataFrame(gnss_data_matrix[:, :4], columns=cols)
+            frame.set_index("Time", inplace=True)
+            
+            accel_data.append({
+                    "df": frame,
+                    "range": None, 
+                    "name": sensor.name
+                })
     if accel_data:
         all_accels_df = pd.concat([item["df"] for item in accel_data], axis=1)
         times_array = all_accels_df.index.values
@@ -79,9 +94,14 @@ def run_single_simulation(i, rocket, environment, flight):
         all_accels_df["Best_AngVel_X"] = get_best_angular_velocity(real_angvel_x, "X", all_accels_df, angular_velocity_thresholds)
         all_accels_df["Best_AngVel_Y"] = get_best_angular_velocity(real_angvel_y, "Y", all_accels_df, angular_velocity_thresholds)
         all_accels_df["Best_AngVel_Z"] = get_best_angular_velocity(real_angvel_z, "Z", all_accels_df, angular_velocity_thresholds)
-        
+
+        all_accels_df["Best_Lat"] = get_gnss_value(all_accels_df, "Lat")
+        all_accels_df["Best_Lon"] = get_gnss_value(all_accels_df, "Lon")
+        all_accels_df["Best_Alt"] = get_gnss_value(all_accels_df, "Alt")
+
         final_cols = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z", 
-                      "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z"]
+                      "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z",
+                      "Best_Lat", "Best_Lon", "Best_Alt"]
         final_df = all_accels_df[final_cols].copy()
         final_df.to_csv(f"output/flight_{i}_best_sensors.csv", index_label="Time")
         final_df['flight_id'] = i 

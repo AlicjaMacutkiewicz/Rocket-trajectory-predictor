@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import tqdm
 from enum import IntEnum
-from rocketpy import Environment, SolidMotor, Rocket, Flight , Barometer , Accelerometer, Gyroscope
+from rocketpy import Environment, SolidMotor, Rocket, Flight , Barometer , Accelerometer, Gyroscope, GnssReceiver
 from single_simulation import run_single_simulation
 from pathos.multiprocessing import ProcessPool
 
@@ -167,6 +167,18 @@ def init_gyroscope_from_JSON(path_to_file, name):
     )
     return gyroscope
 
+def init_gnss_from_JSON(path_to_file, name):
+    with open(path_to_file, 'r', encoding='utf-8')as file:
+            data= json.load(file)
+    gnss_data = data[name]
+    gnss = GnssReceiver(
+        name="GNSS",
+        sampling_rate=gnss_data["sampling_rate"],
+        position_accuracy=gnss_data["position_accuracy"],
+        altitude_accuracy=gnss_data["altitude_accuracy"]
+    )
+    return gnss
+
 def add_gyro_to_rocket(rocket , gyro_list):
     gyro_list.sort(key= lambda x: x.measurement_range)
     for g in gyro_list:
@@ -211,6 +223,7 @@ def main():
     acc_list.append(init_gyroscope_from_JSON("../sensors/gyroscope.json","LSM9DS1_gyro_245dps"))
     acc_list.append(init_gyroscope_from_JSON("../sensors/gyroscope.json","LSM9DS1_gyro_500dps"))
     acc_list.append(init_gyroscope_from_JSON("../sensors/gyroscope.json","LSM9DS1_gyro_2000dps"))
+    acc_list.append(init_gnss_from_JSON("../sensors/gnss_velocity_heading.json","u-blox_MAX-M10S"))
     flight = init_flight_from_JSON("config.json",rocket,environment)
     add_acc_to_rocket(rocket , acc_list)
     parallel_generator(3,rocket , environment , flight)
