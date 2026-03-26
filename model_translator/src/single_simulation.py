@@ -32,7 +32,7 @@ def get_best_angular_velocity(real_vals, suffix, all_accels_df, thresholds):
     choices = [all_accels_df[f"LSM9DS1_gyro_{dps}dps_{suffix}"] for dps in [245, 500]]
     return np.select(cond, choices, default=all_accels_df[f"LSM9DS1_gyro_2000dps_{suffix}"])
 
-def create_new_environment():
+def create_new_environment(environment_data):
 
     '''
     Potrzebujemy 2 datasety
@@ -69,8 +69,8 @@ def create_new_environment():
     '''
 
     dir = os.path.dirname(__file__)
-    pl = xr.open_dataset(os.path.join(dir, "../../source_model/ERA5_weather/levels/data_stream-oper_stepType-instant.nc"))
-    sl = xr.open_dataset(os.path.join(dir, "../../source_model/ERA5_weather/single/data_stream-oper_stepType-instant.nc"))
+    pl = xr.open_dataset(os.path.join(dir, f"../../source_model/ERA5_weather/levels/{environment_data["path"]}"))
+    sl = xr.open_dataset(os.path.join(dir, f"../../source_model/ERA5_weather/single/{environment_data["path"]}"))
 
     g = 9.80665
     geo = pl["z"].data[0].flatten() # geopotential
@@ -94,9 +94,9 @@ def create_new_environment():
     V_new = interp1d(h, V, fill_value="extrapolate")(h_new)
 
     env = Environment(
-        latitude=54.37,
-        longitude=18.62,
-        elevation=10
+        latitude = environment_data["latitude"],
+        longitude = environment_data["longitude"],
+        elevation = environment_data["elevation"]
     )
 
     # todo w tym momencie mozna nakladac szumy na atmosfere
@@ -114,10 +114,10 @@ def create_new_environment():
 
     return env
 
-def run_single_simulation(i, rocket, environment, flight):
+def run_single_simulation(i, rocket, environment_data, flight):
     current_flight = Flight(
             heading=flight.heading,
-            environment=create_new_environment(),
+            environment=create_new_environment(environment_data),
             rocket=rocket,
             rail_length=flight.rail_length
             )

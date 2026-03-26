@@ -107,13 +107,7 @@ def init_environment_from_JSON(path_to_file):
         data= json.load(file)
     print_info(f"Reading from {path_to_file}")
     env_data = data["environment"]
-    env = Environment(
-                latitude=env_data["latitude"], 
-                longitude=env_data["longitude"],
-                date=env_data["date"],
-                elevation=env_data["elevation"]
-            )
-    return env
+    return env_data
 
 def init_flight_from_JSON(path_to_file, rocket, environment):
     with open(path_to_file, 'r', encoding='utf-8')as file:
@@ -182,10 +176,10 @@ def add_acc_to_rocket(rocket , acc_list):
         rocket.add_sensor(a , 1)
     return rocket
 
-def parallel_generator(N, rocket, environment, flight):
+def parallel_generator(N, rocket, environment_data, flight):
     indices = range(N) 
     def worker(i):
-        return run_single_simulation(i, rocket, environment, flight)
+        return run_single_simulation(i, rocket, environment_data, flight)
 
     with ProcessPool() as pool:
         results = list(tqdm.tqdm(pool.imap(worker, indices), total=N, desc="Siupi dupi Grzesiu dawaj"))
@@ -204,7 +198,7 @@ def main():
     drag_path= os.path.join(dir, "../../source_model/APEX_OUTPUT/drag_curve.csv")
     thrust_path= os.path.join(dir, "../../source_model/APEX_OUTPUT/thrust_source.csv")
     rocket = init_rocket_from_JSON(json_path, drag_path , thrust_path)
-    environment = init_environment_from_JSON(os.path.join(dir, "config.json"))
+    environment_data = init_environment_from_JSON(os.path.join(dir, "config.json"))
     acc_list = [] 
     acc_list.append(init_accelerometer_from_JSON(os.path.join(dir, "../sensors/accelerometer.json"),"LSM9DS1_acc_2g"))
     acc_list.append(init_accelerometer_from_JSON(os.path.join(dir, "../sensors/accelerometer.json"),"LSM9DS1_acc_4g"))
@@ -213,9 +207,9 @@ def main():
     acc_list.append(init_gyroscope_from_JSON(os.path.join(dir, "../sensors/gyroscope.json"),"LSM9DS1_gyro_245dps"))
     acc_list.append(init_gyroscope_from_JSON(os.path.join(dir, "../sensors/gyroscope.json"),"LSM9DS1_gyro_500dps"))
     acc_list.append(init_gyroscope_from_JSON(os.path.join(dir, "../sensors/gyroscope.json"),"LSM9DS1_gyro_2000dps"))
-    flight = init_flight_from_JSON(os.path.join(dir, "config.json"),rocket,environment)
+    flight = init_flight_from_JSON(os.path.join(dir, "config.json"), rocket, environment_data)
     add_acc_to_rocket(rocket , acc_list)
-    parallel_generator(3,rocket , environment , flight)
+    parallel_generator(3,rocket , environment_data, flight)
     
 if __name__=="__main__":
     main()
