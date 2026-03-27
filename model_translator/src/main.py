@@ -114,19 +114,21 @@ def init_base_motor_from_JSON(path_to_file, thrust_source_csv):
 
     return motor
 
-def init_stochastic_motor(base_motor):
+def init_stochastic_motor(base_motor, stochastic_motor_params):
+    (grain_density_param, grain_outer_radius_param, 
+     grain_initial_inner_radius_param, grain_initial_height_param, 
+     nozzle_radius_param, throat_radius_param, total_impulse_param) = stochastic_motor_params
     stochastic_motor = StochasticSolidMotor(
         solid_motor=base_motor,
-
-        grain_density=0.015 * base_motor.grain_density,
-        grain_outer_radius=0.01 * base_motor.grain_outer_radius,
-        grain_initial_inner_radius=0.03 * base_motor.grain_initial_inner_radius,
-        grain_initial_height=0.02 * base_motor.grain_initial_height,
-        nozzle_radius=0.02 * base_motor.nozzle_radius,
-        throat_radius=0.02 * base_motor.throat_radius,
+        grain_density=grain_density_param * base_motor.grain_density,
+        grain_outer_radius=grain_outer_radius_param* base_motor.grain_outer_radius,
+        grain_initial_inner_radius=grain_initial_inner_radius_param* base_motor.grain_initial_inner_radius,
+        grain_initial_height=grain_initial_height_param* base_motor.grain_initial_height,
+        nozzle_radius=nozzle_radius_param * base_motor.nozzle_radius,
+        throat_radius=throat_radius_param * base_motor.throat_radius,
 
         # opcjonalnie, ale można dodać szum do impulsu całkowitego, co może być bardziej realistyczne niż szum w poszczególnych parametrach
-        total_impulse=0.03 * base_motor.total_impulse
+        total_impulse=total_impulse_param * base_motor.total_impulse
     )
     return stochastic_motor
 
@@ -206,7 +208,7 @@ def init_gyroscope_from_JSON(path_to_file, name):
 
 def init_gnss_from_JSON(path_to_file, name):
     with open(path_to_file, 'r', encoding='utf-8')as file:
-            data= json.load(file)
+        data= json.load(file)
     gnss_data = data[name]
     gnss = GnssReceiver(
         name="GNSS",
@@ -235,13 +237,28 @@ def add_acc_to_rocket(rocket , acc_list):
 def test_stochastic_motor(stochastic_motor):
         sampled_motor = stochastic_motor.create_object()
         print("grain_density =", sampled_motor.grain_density)
+
+def init_stochastic_motor_params(path):
+    with open(path, 'r', encoding='utf-8')as file:
+        dataset= json.load(file)
+
+    motor_data = dataset["stochastic_motor_params"]
+    grain_density_param = motor_data["grain_density_param"]
+    grain_outer_radius_param = motor_data["grain_outer_radius_param"]
+    grain_initial_inner_radius_param = motor_data["grain_initial_inner_radius_param"]
+    grain_initial_height_param = motor_data["grain_initial_height_param"]
+    nozzle_radius_param = motor_data["nozzle_radius_param"]
+    throat_radius_param = motor_data["throat_radius_param"]
+    total_impulse_param = motor_data["total_impulse_param"]
+    params = (grain_density_param, grain_outer_radius_param, grain_initial_inner_radius_param, grain_initial_height_param, nozzle_radius_param, throat_radius_param, total_impulse_param)
+    return params
     
-def parallel_generator(N, json_path, drag_path, environment, heading , rail_length,acc_list,thrust_path):
+def parallel_generator(N, json_path, drag_path, environment, heading , rail_length,acc_list,thrust_path,stochastic_motor_params):
     indices = range(N) 
     def worker(i):
         np.random.seed(i)
         base_motor = init_base_motor_from_JSON(json_path, thrust_path)
-        stochastic_motor = init_stochastic_motor(base_motor)
+        stochastic_motor = init_stochastic_motor(base_motor,stochastic_motor_params)
         sampled_motor = stochastic_motor.create_object()
         stochastic_motor._set_stochastic(seed=i)
 
@@ -286,8 +303,8 @@ def main():
 
     (heading ,  rail_length) = init_flight_config_from_JSON("config.json")
     
-
-    parallel_generator(3,json_path,drag_path,environment,heading,rail_length,acc_list,thrust_path)
+    stochastic_motor_params = init_stochastic_motor_params("config.json")
+    parallel_generator(30,json_path,drag_path,environment,heading,rail_length,acc_list,thrust_path, stochastic_motor_params)
     
 if __name__=="__main__":
     main()
