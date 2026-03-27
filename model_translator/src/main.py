@@ -10,6 +10,7 @@ from rocketpy import Environment, SolidMotor, Rocket, Flight , Barometer , Accel
 from single_simulation import run_single_simulation
 from pathos.multiprocessing import ProcessPool
 from rocketpy.stochastic import StochasticSolidMotor
+TEST_FLAG = False
 class LogLevel(IntEnum):
     INFO = 1
     WARNING = 2
