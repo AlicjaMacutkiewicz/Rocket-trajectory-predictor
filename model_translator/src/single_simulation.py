@@ -66,8 +66,8 @@ def create_new_environment(environment_data):
     '''
 
     dir = os.path.dirname(__file__)
-    pl = xr.open_dataset(os.path.join(dir, f"../../source_model/ERA5_weather/levels/{environment_data["path"]}"))
-    sl = xr.open_dataset(os.path.join(dir, f"../../source_model/ERA5_weather/single/{environment_data["path"]}"))
+    pl = xr.open_dataset(os.path.join(dir, f"../../source_model/ERA5_weather/levels/{environment_data['path']}"))
+    sl = xr.open_dataset(os.path.join(dir, f"../../source_model/ERA5_weather/single/{environment_data['path']}"))
 
     g = 9.80665
     geo = pl["z"].data[0].flatten() # geopotential
@@ -126,6 +126,31 @@ def apply_sensor_faults(sensor_data):
         change = np.random.randint(-(2**16), (2**16))
         #TODO: edyjca sensor_data
     return (sensor_data + change) 
+
+def apply_sensor_dropout(current_flight, frame):
+    times = frame.index.values
+    for _ in range(4000):
+        i = np.random.randint(0, len(times))
+        ax = current_flight.ax(times[i])
+        ay = current_flight.ay(times[i])
+        az = current_flight.az(times[i])
+        g_force = np.sqrt(ax**2 + ay**2 + az**2) / 9.80665
+    
+        alt = current_flight.z(times[i])
+
+        wind_u = current_flight.env.wind_velocity_x(alt)
+        wind_v = current_flight.env.wind_velocity_y(alt)
+
+        wind_speed = np.sqrt(wind_u**2 + wind_v**2)
+
+        drop_rate = np.clip(0.001 + 0.002*wind_speed + (g_force-4)*0.01, 0, 1)
+        
+        if np.random.rand() < drop_rate:
+            dropout_interval = np.random.randint(1000, 10000)
+            for j in range(i, i+dropout_interval):
+                frame.iloc[j] = np.nan
+    return frame
+
 def run_single_simulation(i, rocket, environment_data, heading , rail_length):
     current_flight = Flight(
             heading=heading,
@@ -149,6 +174,8 @@ def run_single_simulation(i, rocket, environment_data, heading , rail_length):
             cols = ["Time", f"{sensor.name}_X", f"{sensor.name}_Y" , f"{sensor.name}_Z"]
             frame = pd.DataFrame(sensor.measured_data , columns=cols)
             frame.set_index("Time", inplace=True)
+            
+            apply_sensor_dropout(current_flight, frame)
 
             accel_data.append({
                     "df": frame,
@@ -157,6 +184,7 @@ def run_single_simulation(i, rocket, environment_data, heading , rail_length):
                 })
     if accel_data:
         all_accels_df = pd.concat([item["df"] for item in accel_data], axis=1)
+        all_accels_df.dropna(inplace=True)
         times_array = all_accels_df.index.values
         
         real_acc_x = np.array([current_flight.ax(t) for t in times_array])
