@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import json
+import datetime
 import pandas as pd
 import tqdm
 from enum import IntEnum
@@ -101,20 +102,32 @@ def init_rocket_from_JSON(path_to_file, drag_curve_csv, thrust_source_csv):
             )
     return rocket
 
+def get_environment_data_from_JSON(path_to_file):
+    with open(path_to_file, 'r', encoding='utf-8')as file:
+        data= json.load(file)
+    print_info(f"Reading from {path_to_file}")
+    env_data = data["environment"]
+    return env_data
+
 def init_environment_from_JSON(path_to_file):
     with open(path_to_file, 'r', encoding='utf-8')as file:
         data= json.load(file)
     print_info(f"Reading from {path_to_file}")
     env_data = data["environment"]
+   
+
+    date1 = datetime.datetime.strptime("19.03.2026", "%d.%m.%Y")
+    print(date1)
+    
     env = Environment(
                 latitude=env_data["latitude"], 
                 longitude=env_data["longitude"],
-                date=env_data["date"],
-                elevation=env_data["elevation"]
-            )
+                date=date1,
+                elevation=env_data["elevation"],
+                timezone="America/New_York")
     return env
 
-def init_flight_config_from_JSON(path_to_file, rocket, environment):
+def init_flight_config_from_JSON(path_to_file):
     with open(path_to_file, 'r', encoding='utf-8')as file:
         data= json.load(file)
     print_info(f"Reading from {path_to_file}")
@@ -210,7 +223,7 @@ def main():
     drag_path= "../../source_model/APEX_OUTPUT/drag_curve.csv"
     thrust_path= "../../source_model/APEX_OUTPUT/thrust_source.csv"
     rocket = init_rocket_from_JSON(json_path, drag_path , thrust_path)
-    environment = init_environment_from_JSON("config.json")
+    environment_data = get_environment_data_from_JSON("config.json")
     acc_list = [] 
     acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_2g"))
     acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_4g"))
@@ -221,10 +234,10 @@ def main():
     acc_list.append(init_gyroscope_from_JSON("../sensors/gyroscope.json","LSM9DS1_gyro_2000dps"))
     acc_list.append(init_gnss_from_JSON("../sensors/gnss_velocity_heading.json","u-blox_MAX-M10S"))
 
-    (heading ,  rail_length) = init_flight_config_from_JSON("config.json",rocket,environment)
+    (heading ,  rail_length) = init_flight_config_from_JSON("config.json")
     add_acc_to_rocket(rocket , acc_list)
 
-    parallel_generator(3,rocket , environment , heading , rail_length)
+    parallel_generator(3,rocket , environment_data , heading , rail_length)
     
 if __name__=="__main__":
     main()
