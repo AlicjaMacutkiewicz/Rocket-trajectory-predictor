@@ -23,6 +23,7 @@ def rp_solution_arr_str(data):
 #helper function for 'run_single_simulation'
 def get_best_acceleration(real_vals, suffix, all_accels_df, thresholds):
     cond = [np.abs(real_vals) < t for t in thresholds]
+    print(real_vals)
     choices = [all_accels_df[f"LSM9DS1_acc_{g}g_{suffix}"] for g in [2, 4, 8]]
     return np.select(cond, choices, default=all_accels_df[f"LSM9DS1_acc_16g_{suffix}"])
 
@@ -117,6 +118,14 @@ def create_new_environment(environment_data):
 
     return env
 
+def apply_sensor_faults(sensor_data):
+    chance = 1/100000
+    change = 0
+    if (np.random.rand() <= chance):
+        print("SENSOR FAULT ")
+        change = np.random.randint(-(2**16), (2**16))
+        #TODO: edyjca sensor_data
+    return (sensor_data + change) 
 def run_single_simulation(i, rocket, environment_data, heading , rail_length):
     current_flight = Flight(
             heading=heading,

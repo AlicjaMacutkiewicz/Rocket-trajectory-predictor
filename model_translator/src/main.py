@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import sys
 import json
 import datetime
 import pandas as pd
@@ -9,6 +10,10 @@ from rocketpy import Environment, SolidMotor, Rocket, Flight , Barometer , Accel
 from single_simulation import run_single_simulation
 from pathos.multiprocessing import ProcessPool
 
+
+TEST_FLAG = False
+
+
 class LogLevel(IntEnum):
     INFO = 1
     WARNING = 2
@@ -16,13 +21,13 @@ class LogLevel(IntEnum):
 C_CURRENT_LOG_LEVEL = LogLevel.INFO
 
 def print_error(msg):
-    if C_CURRENT_LOG_LEVEL>= LogLevel.ERROR:
+    if C_CURRENT_LOG_LEVEL<= LogLevel.ERROR:
        print("ERROR: " + msg + '\n')
 def print_info(msg):
-    if C_CURRENT_LOG_LEVEL>= LogLevel.INFO:
+    if C_CURRENT_LOG_LEVEL<= LogLevel.INFO:
         print("INFO: " + msg + '\n')
 def print_warning(msg):
-    if C_CURRENT_LOG_LEVEL>= LogLevel.WARNING:
+    if C_CURRENT_LOG_LEVEL <= LogLevel.WARNING:
         print("WARNING: " + msg + '\n')
 
 # @BRIEF
@@ -200,7 +205,8 @@ def add_acc_to_rocket(rocket , acc_list):
     acc_list.sort(key= lambda x: x.measurement_range)
     for a in acc_list:
         #TODO: replace 1 
-        a.sampling_rate /= 10
+        if(TEST_FLAG):
+            a.sampling_rate /= 10
         rocket.add_sensor(a , 1)
     return rocket
 
@@ -222,6 +228,11 @@ def parallel_generator(N, rocket, environment, heading , rail_length):
     # |
 
 def main():
+    global TEST_FLAG
+    if(len(sys.argv) > 1):
+        if sys.argv[1] == 'test':
+            TEST_FLAG = True
+            print_warning("RUNNING IN TEST MODE")
     json_path = "../../source_model/APEX_OUTPUT/parameters.json"
     drag_path= "../../source_model/APEX_OUTPUT/drag_curve.csv"
     thrust_path= "../../source_model/APEX_OUTPUT/thrust_source.csv"
