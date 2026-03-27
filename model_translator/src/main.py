@@ -9,11 +9,7 @@ from enum import IntEnum
 from rocketpy import Environment, SolidMotor, Rocket, Flight , Barometer , Accelerometer, Gyroscope, GnssReceiver
 from single_simulation import run_single_simulation
 from pathos.multiprocessing import ProcessPool
-
-
-TEST_FLAG = False
-
-
+from rocketpy.stochastic import StochasticSolidMotor
 class LogLevel(IntEnum):
     INFO = 1
     WARNING = 2
@@ -39,7 +35,7 @@ def print_warning(msg):
 # @RETURN
 #     rocket -> Initialized rocketpy::Rocket class 
 
-def init_rocket_from_JSON(path_to_file, drag_curve_csv, thrust_source_csv):
+def init_rocket_from_JSON(path_to_file, drag_curve_csv, motor):
     with open(path_to_file, 'r', encoding='utf-8')as file:
         data= json.load(file)
     print_info(f"Reading from {path_to_file}")
@@ -47,28 +43,7 @@ def init_rocket_from_JSON(path_to_file, drag_curve_csv, thrust_source_csv):
     name = data['id']['rocket_name']
 
     print_info(f"Loading model: {name}")
-
-    motor_data = data["motors"] 
      
-    print_info("loading motor")
-    motor = SolidMotor(
-        thrust_source=thrust_source_csv,
-        dry_mass=motor_data["dry_mass"],
-        dry_inertia=motor_data["dry_inertia"],
-        nozzle_radius=motor_data["nozzle_radius"],
-        grain_number=motor_data["grain_number"],
-        grain_density=motor_data["grain_density"],
-        grain_outer_radius=motor_data["grain_outer_radius"],
-        grain_initial_inner_radius=motor_data["grain_initial_inner_radius"],
-        grain_initial_height=motor_data["grain_initial_height"],
-        grain_separation=motor_data["grain_separation"],
-        grains_center_of_mass_position=motor_data["grains_center_of_mass_position"],
-        center_of_dry_mass_position=motor_data["center_of_dry_mass_position"],
-        nozzle_position=motor_data["nozzle_position"],
-        burn_time=3.0, 
-        throat_radius=motor_data["throat_radius"],
-        coordinate_system_orientation=motor_data["coordinate_system_orientation"]
-            ) 
     rocket_data = data["rocket"]
     print_info("loading rocket")
     rocket = Rocket(
@@ -80,6 +55,7 @@ def init_rocket_from_JSON(path_to_file, drag_curve_csv, thrust_source_csv):
         center_of_mass_without_motor=rocket_data["center_of_mass_without_propellant"],
         coordinate_system_orientation=rocket_data["coordinate_system_orientation"]
                 )
+    motor_data = data["motors"]
     rocket.add_motor(motor, position=motor_data["position"])
     print_info("loading nose")
     nose_data = data["nosecones"]
@@ -107,6 +83,51 @@ def init_rocket_from_JSON(path_to_file, drag_curve_csv, thrust_source_csv):
             lag=parachute_data["deploy_delay"]
             )
     return rocket
+
+def init_base_motor_from_JSON(path_to_file, thrust_source_csv):
+    with open(path_to_file, 'r', encoding='utf-8') as file:
+        data = json.load(file)
+
+    print_info(f"Reading from {path_to_file}")
+    motor_data = data["motors"]
+
+    print_info("loading base motor")
+    motor = SolidMotor(
+        thrust_source=thrust_source_csv,
+        dry_mass=motor_data["dry_mass"],
+        dry_inertia=motor_data["dry_inertia"],
+        nozzle_radius=motor_data["nozzle_radius"],
+        grain_number=motor_data["grain_number"],
+        grain_density=motor_data["grain_density"],
+        grain_outer_radius=motor_data["grain_outer_radius"],
+        grain_initial_inner_radius=motor_data["grain_initial_inner_radius"],
+        grain_initial_height=motor_data["grain_initial_height"],
+        grain_separation=motor_data["grain_separation"],
+        grains_center_of_mass_position=motor_data["grains_center_of_mass_position"],
+        center_of_dry_mass_position=motor_data["center_of_dry_mass_position"],
+        nozzle_position=motor_data["nozzle_position"],
+       # burn_time=3.0,
+        throat_radius=motor_data["throat_radius"],
+        coordinate_system_orientation=motor_data["coordinate_system_orientation"]
+    )
+
+    return motor
+
+def init_stochastic_motor(base_motor):
+    stochastic_motor = StochasticSolidMotor(
+        solid_motor=base_motor,
+
+        grain_density=0.015 * base_motor.grain_density,
+        grain_outer_radius=0.01 * base_motor.grain_outer_radius,
+        grain_initial_inner_radius=0.03 * base_motor.grain_initial_inner_radius,
+        grain_initial_height=0.02 * base_motor.grain_initial_height,
+        nozzle_radius=0.02 * base_motor.nozzle_radius,
+        throat_radius=0.02 * base_motor.throat_radius,
+
+        # opcjonalnie, ale można dodać szum do impulsu całkowitego, co może być bardziej realistyczne niż szum w poszczególnych parametrach
+        total_impulse=0.03 * base_motor.total_impulse
+    )
+    return stochastic_motor
 
 def get_environment_data_from_JSON(path_to_file):
     with open(path_to_file, 'r', encoding='utf-8')as file:
@@ -210,11 +231,24 @@ def add_acc_to_rocket(rocket , acc_list):
         rocket.add_sensor(a , 1)
     return rocket
 
-def parallel_generator(N, rocket, environment, heading , rail_length):
+def test_stochastic_motor(stochastic_motor):
+        sampled_motor = stochastic_motor.create_object()
+        print("grain_density =", sampled_motor.grain_density)
+    
+def parallel_generator(N, json_path, drag_path, environment, heading , rail_length,acc_list,thrust_path):
     indices = range(N) 
     def worker(i):
         np.random.seed(i)
-        return run_single_simulation(i, rocket, environment, heading , rail_length)
+        base_motor = init_base_motor_from_JSON(json_path, thrust_path)
+        stochastic_motor = init_stochastic_motor(base_motor)
+        sampled_motor = stochastic_motor.create_object()
+        stochastic_motor._set_stochastic(seed=i)
+
+        rocket = init_rocket_from_JSON(json_path,drag_path,sampled_motor)
+        rocket = add_acc_to_rocket(rocket, acc_list)
+        test_stochastic_motor(stochastic_motor)
+        return run_single_simulation(i, rocket, environment, heading, rail_length)
+    
 
     with ProcessPool() as pool:
         results = list(tqdm.tqdm(pool.imap(worker, indices), total=N, desc="Siupi dupi Grzesiu dawaj"))
@@ -226,7 +260,7 @@ def parallel_generator(N, rocket, environment, heading , rail_length):
     # master_df.reset_index(inplace=True)
     # master_df.to_parquet("dataset_packed.parquet", index=True)
     # |
-
+  
 def main():
     global TEST_FLAG
     if(len(sys.argv) > 1):
@@ -236,8 +270,9 @@ def main():
     json_path = "../../source_model/APEX_OUTPUT/parameters.json"
     drag_path= "../../source_model/APEX_OUTPUT/drag_curve.csv"
     thrust_path= "../../source_model/APEX_OUTPUT/thrust_source.csv"
-    rocket = init_rocket_from_JSON(json_path, drag_path , thrust_path)
-    environment_data = get_environment_data_from_JSON("config.json")
+    
+
+    environment = get_environment_data_from_JSON("config.json")
     acc_list = [] 
     acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_2g"))
     acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_4g"))
@@ -249,9 +284,9 @@ def main():
     acc_list.append(init_gnss_from_JSON("../sensors/gnss_velocity_heading.json","u-blox_MAX-M10S"))
 
     (heading ,  rail_length) = init_flight_config_from_JSON("config.json")
-    add_acc_to_rocket(rocket , acc_list)
+    
 
-    parallel_generator(3,rocket , environment_data , heading , rail_length)
+    parallel_generator(3,json_path,drag_path,environment,heading,rail_length,acc_list,thrust_path)
     
 if __name__=="__main__":
     main()
