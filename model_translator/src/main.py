@@ -263,11 +263,11 @@ def parallel_generator(N, json_path, drag_path, environment, heading , rail_leng
     def worker(i):
         np.random.seed(i)
         base_motor = init_base_motor_from_JSON(json_path, thrust_path)
-        stochastic_motor = init_stochastic_motor(base_motor,stochastic_motor_params)
-        sampled_motor = stochastic_motor.create_object()
-        stochastic_motor._set_stochastic(seed=i)
+        # stochastic_motor = init_stochastic_motor(base_motor,stochastic_motor_params)
+        # sampled_motor = stochastic_motor.create_object()
+        # stochastic_motor._set_stochastic(seed=i)
 
-        rocket = init_rocket_from_JSON(json_path,drag_path,sampled_motor)
+        rocket = init_rocket_from_JSON(json_path,drag_path,base_motor)
         rocket = add_acc_to_rocket(rocket, acc_list)
         return run_single_simulation(i, rocket, environment, heading, rail_length)
     
