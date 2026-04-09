@@ -90,7 +90,6 @@ def create_new_environment(environment_data):
     U_new = interp1d(h, U, fill_value="extrapolate")(h_new)
     V_new = interp1d(h, V, fill_value="extrapolate")(h_new)
 
-
     #
     #   HEJ TU WIKTOR WSTAILEM TE DWIE LINI POD TYM KOMENTARZREM ZEBY JUST 
     # WYNIKI BYLO LOSOWE W RAZIE LEPSZEGO ROZWIAZANIA PROSZE JE USUNAC
