@@ -1,27 +1,5 @@
 {
     "elliptical_fins": {},
-    "tank": {
-        "liquid": {
-            "name": "nitrous oxide",
-            "density": 790
-        },
-        "oxidizer": {
-            "name": "nitrous oxide",
-            "density": 180
-        },
-        "geometry": {
-            "radius": 0.087,
-            "height": 0.700
-        },
-        "name": "oxidizer_tank_r7",
-        "flux_time": 4.9,
-        "initial_liquid_mass": 9.87,
-        "initial_gas_mass": 0.13,
-        "liquid_mass_flow_rate_in": 0,
-        "liquid_mass_flow_rate_out": 2,
-        "gas_mass_flow_rate_in": 0,
-        "gas_mass_flow_rate_out": 0
-    },
     "environment": {
         "base_pressure": null,
         "base_temperature": null,
@@ -62,7 +40,7 @@
         "grains_center_of_mass_position": 0.5,
         "nozzle_position": -0.157,
         "nozzle_radius": 0.0385,
-        "position": 0,
+        "position": null,
         "throat_radius": 0.0185,
         "burn_time": 9.0,
         "thrust_source": "C:/Users/alicj/Desktop/SimBa_Simulations/Simulations/SimLE_SimBa_R7_Rocket.eng"
@@ -77,14 +55,21 @@
         "position": 3.917
     },
     "parachutes": {
-        "0": {
-            "area": 4.908738521234052,
-            "cd": 1.0,
-            "cds": 4.908738521234052,
-            "deploy_altitude": null,
-            "deploy_delay": 2.0,
-            "deploy_event": "apogee",
-            "name": "Parachute"
+        "main": {
+            "name": "main",
+            "cd_s": 10.706,
+            "trigger": 550,
+            "sampling_rate": 100,
+            "lag": 3,
+            "noise":[ 0,0,0]
+        },
+        "drouge": {
+            "name": "drogue",
+            "cd_s": 1.43,
+            "trigger": "apogee",
+            "sampling_rate": 100,
+            "lag": 3,
+            "noise":[ 0,0,0]
         }
     },
     "rail_buttons": {},
