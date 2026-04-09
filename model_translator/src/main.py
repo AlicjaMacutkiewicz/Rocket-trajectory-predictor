@@ -51,7 +51,7 @@ def init_rocket_from_JSON(path_to_file, drag_curve_csv, motor):
                 position = nose_data["position"]
             )
     Log.print_info("loading fins")
-    rocket.add_trapezoidal_fins( #change when eagle lands
+    rocket.add_trapezoidal_fins( #todo change when eagle lands
                 n = 3,
                 root_chord = 0.12,
                 tip_chord = 0.06,
@@ -206,7 +206,7 @@ def add_gyro_to_rocket(rocket , gyro_list):
     gyro_list.sort(key = lambda x: x.measurement_range)
     for g in gyro_list:
         #TODO: replace 1 
-        rocket.add_sensor(g , 1) #change when eagle lands
+        rocket.add_sensor(g , 1) #todo change when eagle lands
     return rocket
 
 def add_acc_to_rocket(rocket , acc_list):
@@ -215,7 +215,7 @@ def add_acc_to_rocket(rocket , acc_list):
         #TODO: replace 1 
         if TEST_FLAG:
             a.sampling_rate /= 100
-        rocket.add_sensor(a , 1) #change when eagle lands
+        rocket.add_sensor(a , 1) #todo change when eagle lands
     return rocket
 
 def init_stochastic_motor_params(path_to_file):

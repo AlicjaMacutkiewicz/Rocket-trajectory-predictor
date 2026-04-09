@@ -6,6 +6,8 @@ import xarray as xr
 from rocketpy import Flight, Accelerometer, Gyroscope, Environment, GnssReceiver
 from scipy.interpolate import interp1d
 
+from logger import *
+
 
 # @BRIEF
 # cretes string based on rp.solution_array, without np.float type signature
@@ -21,7 +23,7 @@ def rp_solution_arr_str(data):
     return msg
 
 
-#helper function for 'run_single_simulation'
+# helper function for 'run_single_simulation'
 def get_best_acceleration(real_vals, suffix, all_accels_df, thresholds):
     cond = [np.abs(real_vals) < t for t in thresholds]
     choices = [all_accels_df[f"LSM9DS1_acc_{g}g_{suffix}"] for g in [2, 4, 8]]
@@ -117,13 +119,14 @@ def create_new_environment(environment_data):
 
     return env
 
-def apply_sensor_faults(sensor_data):
-    chance = 1/100000
+def apply_sensor_faults(sensor_data, chance_denominator = 100000):
+    chance = 1/chance_denominator
     change = 0
     if np.random.rand() <= chance:
         print("SENSOR FAULT ")
         change = np.random.randint(-(2**16), (2**16))
-        #TODO: edyjca sensor_data
+        Log.print_info("SENSOR FAULT " + str(change))
+        #TODO: edycja sensor_data
     return sensor_data + change
 
 def apply_sensor_dropout(current_flight, frame):
