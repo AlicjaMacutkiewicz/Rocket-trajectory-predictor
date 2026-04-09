@@ -90,7 +90,14 @@
         "min_stability_margin": 0.0,
         "time_to_apogee": 18.626
     },
-    "tails": {},
+    "tail": {
+        "top_radius": 0.087,
+        "bottom_radius": 0.072,
+        "length": 0.095,
+        "position": 0.095,
+        "slant_length": 0.0835,
+        "surface_area": 0.0478365
+    },
     "trapezoidal_fins": {
         "n": 4,
         "root_chord": 0.204,
