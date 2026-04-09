@@ -21,11 +21,7 @@ from single_simulation import run_single_simulation
 # @RETURN
 #     rocket -> Initialized rocketpy::Rocket class 
 
-def init_rocket_from_JSON(path_to_file, drag_curve_csv, motor):
-    with open(path_to_file, 'r', encoding='utf-8')as file:
-        data = json.load(file)
-    Log.print_info(f"Reading from {path_to_file}")
-
+def init_rocket_from_JSON(data, drag_curve_csv, motor):
     name = data['id']['rocket_name']
 
     Log.print_info(f"Loading model: {name}")
@@ -70,11 +66,7 @@ def init_rocket_from_JSON(path_to_file, drag_curve_csv, motor):
             )
     return rocket
 
-def init_base_motor_from_JSON(path_to_file, thrust_source_csv):
-    with open(path_to_file, 'r', encoding = 'utf-8') as file:
-        data = json.load(file)
-
-    Log.print_info(f"Reading from {path_to_file}")
+def init_base_motor_from_JSON(data, thrust_source_csv):
     motor_data = data["motors"]
 
     Log.print_info("loading base motor")
@@ -240,23 +232,28 @@ def init_paths_from_json(main_paths_file):
     
 def parallel_generator(number_of_simulations, json_path, drag_path, environment, heading, rail_length, acc_list, thrust_path, stochastic_motor_params):
     indices = range(number_of_simulations)
+
+    with open(json_path) as f:
+        Log.print_info(f"Reading from {json_path}")
+        rocket_config = json.load(f)
+
     def worker(i):
-        np.random.seed(i)
-        base_motor = init_base_motor_from_JSON(json_path, thrust_path)
+        base_motor = init_base_motor_from_JSON(rocket_config, thrust_path)
         stochastic_motor = init_stochastic_motor(base_motor,stochastic_motor_params)
         sampled_motor = stochastic_motor.create_object()
         stochastic_motor._set_stochastic(seed = i)
 
-        rocket = init_rocket_from_JSON(json_path,drag_path,sampled_motor)
+        rocket = init_rocket_from_JSON(rocket_config,drag_path,sampled_motor)
         rocket = add_acc_to_rocket(rocket, acc_list)
-        return run_single_simulation(i, rocket, environment, heading, rail_length)
+        rng = np.random.default_rng(i)
+        return run_single_simulation(i, rocket, environment, heading, rail_length, rng)
     
 
     with ProcessPool() as pool:
-        results = list(tqdm.tqdm(pool.imap(worker, indices), total = number_of_simulations, desc = "Siupi dupi Grzesiu dawaj"))
+        results = list(tqdm.tqdm(pool.imap_unordered(worker, indices), total = number_of_simulations, desc = "Siupi dupi Grzesiu dawaj"))
     return results
 
-  
+
 def main():
     global TEST_FLAG
     if len(sys.argv) > 1:
@@ -293,6 +290,6 @@ def main():
                        paths["source_model_path"]["thrust_source"],
                        stochastic_motor_params
                        )
-    
+
 if __name__=="__main__":
     main()
