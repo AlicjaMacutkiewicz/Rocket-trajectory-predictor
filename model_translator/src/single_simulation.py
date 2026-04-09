@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from rocketpy import Flight , Accelerometer, Gyroscope, Environment
@@ -21,15 +20,14 @@ def rp_solution_arr_str(data):
     msg += ']'
     return msg
 
-
 #helper function for 'run_single_simulation'
-def get_best_acceleration(real_vals, suffix, all_accels_df, thresholds):
+def get_best_acceleration(real_vals, suffix, all_accels_df, thresholds): #change when eagle lands
     cond = [np.abs(real_vals) < t for t in thresholds]
     print(real_vals)
     choices = [all_accels_df[f"LSM9DS1_acc_{g}g_{suffix}"] for g in [2, 4, 8]]
     return np.select(cond, choices, default=all_accels_df[f"LSM9DS1_acc_16g_{suffix}"])
 
-def get_best_angular_velocity(real_vals, suffix, all_accels_df, thresholds):
+def get_best_angular_velocity(real_vals, suffix, all_accels_df, thresholds): #change when eagle lands
     real_vals_dps = np.degrees(real_vals)
     cond = [np.abs(real_vals_dps) < t for t in thresholds]
     choices = [all_accels_df[f"LSM9DS1_gyro_{dps}dps_{suffix}"] for dps in [245, 500]]
@@ -87,7 +85,7 @@ def create_new_environment(environment_data):
     U = np.insert(U, 0, u10)
     V = np.insert(V, 0, v10)
 
-    h_new = np.linspace(0, 30000, 200)
+    h_new = np.linspace(2, 30000, 200)
     T_new = interp1d(h, T, fill_value="extrapolate")(h_new)
     U_new = interp1d(h, U, fill_value="extrapolate")(h_new)
     V_new = interp1d(h, V, fill_value="extrapolate")(h_new)
@@ -97,8 +95,8 @@ def create_new_environment(environment_data):
     #   HEJ TU WIKTOR WSTAILEM TE DWIE LINI POD TYM KOMENTARZREM ZEBY JUST 
     # WYNIKI BYLO LOSOWE W RAZIE LEPSZEGO ROZWIAZANIA PROSZE JE USUNAC
     #
-    U_new += np.random.normal(0, 1.5, size=U_new.shape)
-    V_new += np.random.normal(0, 1.5, size=V_new.shape)
+    # U_new += np.random.normal(0, 1.5, size=U_new.shape)
+    # V_new += np.random.normal(0, 1.5, size=V_new.shape)
     env = Environment(
         latitude = environment_data["latitude"],
         longitude = environment_data["longitude"],
@@ -131,13 +129,14 @@ def apply_sensor_faults(sensor_data):
 
 def apply_sensor_dropout(current_flight, frame):
     times = frame.index.values
-    Log.print_info(f"heh {len(times)}")
-    for _ in range(4000):
+    g = 9.80665
+    Log.print_info(f"sensor dropout for length {len(times)}")
+    for _ in range(len(times)//10):
         i = np.random.randint(0, len(times))
         ax = current_flight.ax(times[i])
         ay = current_flight.ay(times[i])
         az = current_flight.az(times[i])
-        g_force = np.sqrt(ax**2 + ay**2 + az**2) / 9.80665
+        g_force = np.sqrt(ax**2 + ay**2 + az**2) / g
     
         alt = current_flight.z(times[i])
 
@@ -161,14 +160,13 @@ def run_single_simulation(i, rocket, environment_data, heading , rail_length):
             rocket=rocket,
             rail_length=rail_length
             )
-    #for parquet data saving and packing (comment out lines below)
-    # |
+    
     dir = os.path.dirname(__file__)
     file_name = os.path.join(dir, f"output/flight_{i}.out")
     with open(file_name, 'w+') as file:
             for sample in current_flight.solution:
                 file.write(rp_solution_arr_str(sample) + '\n')
-    # |
+
     accel_data = []
 
     for sensor_tuple in rocket.sensors:
