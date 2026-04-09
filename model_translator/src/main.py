@@ -250,7 +250,7 @@ def parallel_generator(number_of_simulations, json_path, drag_path, environment,
     
 
     with ProcessPool() as pool:
-        results = list(tqdm.tqdm(pool.imap_unordered(worker, indices), total = number_of_simulations, desc = "Siupi dupi Grzesiu dawaj"))
+        results = list(tqdm.tqdm(pool.uimap(worker, indices), total = number_of_simulations, desc = "Siupi dupi Grzesiu dawaj"))
     return results
 
 

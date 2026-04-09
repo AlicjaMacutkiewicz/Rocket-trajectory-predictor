@@ -122,9 +122,9 @@ def create_new_environment(environment_data, rng):
 def apply_sensor_faults(sensor_data, rng, chance_denominator = 100000):
     chance = 1/chance_denominator
     change = 0
-    if rng.rand() <= chance:
+    if rng.random() <= chance:
         print("SENSOR FAULT ")
-        change = rng.randint(-(2**16), (2**16))
+        change = rng.integers(-65536, 65536) # -(2**16), (2**16)
         Log.print_info("SENSOR FAULT " + str(change))
         #TODO: edycja sensor_data
     return sensor_data + change
@@ -134,20 +134,21 @@ def apply_sensor_dropout(current_flight, frame, rng):
     if len(times) == 0:
         return frame
     for _ in range(len(times)//10):
-        i = rng.randint(0, len(times))
+        i = rng.integers(0, len(times))
+        random_times = times[i]
 
-        ax = current_flight.ax(times[i])
-        ay = current_flight.ay(times[i])
-        az = current_flight.az(times[i])
+        ax = current_flight.ax(random_times)
+        ay = current_flight.ay(random_times)
+        az = current_flight.az(random_times)
         g_force = np.sqrt(ax**2 + ay**2 + az**2) / 9.80665
-        alt = current_flight.z(times[i])
+        alt = current_flight.z(random_times)
         wind_speed = np.sqrt(current_flight.env.wind_velocity_x(alt)**2 +
                              current_flight.env.wind_velocity_y(alt)**2)
 
         drop_rate = np.clip(0.001 + 0.002*wind_speed + (g_force-4)*0.01, 0, 1)
 
-        if rng.rand() < drop_rate:
-            dropout_interval = rng.randint(50, 500)
+        if rng.random() < drop_rate:
+            dropout_interval = rng.integers(50, 500)
             frame.iloc[i : i + dropout_interval] = np.nan
 
     return frame
@@ -211,6 +212,10 @@ def run_single_simulation(i, rocket, environment_data, heading , rail_length, rn
 
         times_array = combined_df.index.values
 
+        # todo to jest koszmarnie wolne
+        # todo wydaje mi sie ze to moze byc szybsze:
+        #  current_flight.ax(times)
+        #  Pawel
         real_acc_x = np.array([current_flight.ax(t) for t in times_array])
         real_acc_y = np.array([current_flight.ay(t) for t in times_array])
         real_acc_z = np.array([current_flight.az(t) for t in times_array])
