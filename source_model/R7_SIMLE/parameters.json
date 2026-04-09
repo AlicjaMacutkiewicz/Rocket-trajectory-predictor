@@ -46,11 +46,13 @@
         "thrust_source": "C:/Users/alicj/Desktop/SimBa_Simulations/Simulations/SimLE_SimBa_R7_Rocket.eng"
     },
     "nosecones": {
-        "base_radius": 0.035,
-        "kind": "ogive",
-        "length": 0.4,
+        "base_radius": null,
+        "kind": "powerseries",
+        "length": 0.750,
         "name": "Nose Cone",
-        "position": 0.0
+        "power": 0.8,
+        "bluffness": null,
+        "position": 3.917
     },
     "parachutes": {
         "0": {
