@@ -208,28 +208,11 @@ def run_single_simulation(i, rocket, environment_data, heading , rail_length):
         all_accels_df["Best_AngVel_X"] = get_best_angular_velocity(real_angvel_x, "X", all_accels_df, angular_velocity_thresholds)
         all_accels_df["Best_AngVel_Y"] = get_best_angular_velocity(real_angvel_y, "Y", all_accels_df, angular_velocity_thresholds)
         all_accels_df["Best_AngVel_Z"] = get_best_angular_velocity(real_angvel_z, "Z", all_accels_df, angular_velocity_thresholds)
-        
+      
         final_cols = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z", 
                       "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z"]
-        final_df = all_accels_df[final_cols].copy()
-        final_df.to_csv(os.path.join(dir, f"output/flight_{i}_best_sensors.csv"), index_label="Time")
+        final_df = all_accels_df[final_cols]
+        final_df.to_csv(os.path.join(dir, f"output/flight_{i}_test_sensors.csv"), index_label="Time")
         final_df['flight_id'] = i 
-
-        #for parquet data saving and packing 
-        # | 
-        # return final_df
-        # |
-
-
-
-
-
-#.....
-    #wiktor wie lepiej 
-    #for parquet data saving and packing 
-    # |
-    # print("Pakowanko...")
-    # master_df = pd.concat(results)
-    # master_df.reset_index(inplace=True)
-    # master_df.to_parquet("dataset_packed.parquet", index=True)
-    # |
+        Log.print_info(f"Pakowanko... {i}")
+        final_df.to_parquet(f"output/flight_{i}.parquet", index=True)
