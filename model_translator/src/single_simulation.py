@@ -35,7 +35,7 @@ def get_best_angular_velocity(real_vals, suffix, all_accels_df, thresholds):
     choices = [all_accels_df[f"LSM9DS1_gyro_{dps}dps_{suffix}"] for dps in [245, 500]]
     return np.select(cond, choices, default=all_accels_df[f"LSM9DS1_gyro_2000dps_{suffix}"])
 
-def create_new_environment(environment_data):
+def create_new_environment(environment_data, rng):
     """
     Potrzebujemy 2 datasety
     1. ERA5 hourly data on single levels from 1940 to present
@@ -96,8 +96,8 @@ def create_new_environment(environment_data):
     #   HEJ TU WIKTOR WSTAILEM TE DWIE LINI POD TYM KOMENTARZREM ZEBY JUST 
     # WYNIKI BYLO LOSOWE W RAZIE LEPSZEGO ROZWIAZANIA PROSZE JE USUNAC
     #
-    U_new += np.random.normal(0, 1.5, size=U_new.shape)
-    V_new += np.random.normal(0, 1.5, size=V_new.shape)
+    U_new += rng.normal(0, 1.5, size=U_new.shape)
+    V_new += rng.normal(0, 1.5, size=V_new.shape)
     env = Environment(
         latitude = environment_data["latitude"],
         longitude = environment_data["longitude"],
@@ -119,22 +119,22 @@ def create_new_environment(environment_data):
 
     return env
 
-def apply_sensor_faults(sensor_data, chance_denominator = 100000):
+def apply_sensor_faults(sensor_data, rng, chance_denominator = 100000):
     chance = 1/chance_denominator
     change = 0
-    if np.random.rand() <= chance:
+    if rng.rand() <= chance:
         print("SENSOR FAULT ")
-        change = np.random.randint(-(2**16), (2**16))
+        change = rng.randint(-(2**16), (2**16))
         Log.print_info("SENSOR FAULT " + str(change))
         #TODO: edycja sensor_data
     return sensor_data + change
 
-def apply_sensor_dropout(current_flight, frame):
+def apply_sensor_dropout(current_flight, frame, rng):
     times = frame.index.values
     if len(times) == 0:
         return frame
     for _ in range(len(times)//10):
-        i = np.random.randint(0, len(times))
+        i = rng.randint(0, len(times))
 
         ax = current_flight.ax(times[i])
         ay = current_flight.ay(times[i])
@@ -146,16 +146,16 @@ def apply_sensor_dropout(current_flight, frame):
 
         drop_rate = np.clip(0.001 + 0.002*wind_speed + (g_force-4)*0.01, 0, 1)
 
-        if np.random.rand() < drop_rate:
-            dropout_interval = np.random.randint(50, 500)
+        if rng.rand() < drop_rate:
+            dropout_interval = rng.randint(50, 500)
             frame.iloc[i : i + dropout_interval] = np.nan
 
     return frame
 
-def run_single_simulation(i, rocket, environment_data, heading , rail_length):
+def run_single_simulation(i, rocket, environment_data, heading , rail_length, rng):
     current_flight = Flight(
             heading=heading,
-            environment=create_new_environment(environment_data),
+            environment=create_new_environment(environment_data, rng),
             rocket=rocket,
             rail_length=rail_length
             )
@@ -175,7 +175,7 @@ def run_single_simulation(i, rocket, environment_data, heading , rail_length):
         frame = pd.DataFrame(sensor.measured_data, columns=cols)
         frame.set_index("Time", inplace=True)
 
-        apply_sensor_dropout(current_flight, frame)
+        apply_sensor_dropout(current_flight, frame, rng)
         if isinstance(sensor , (Accelerometer, Gyroscope)):
             accel_data.append({
                     "df": frame,
