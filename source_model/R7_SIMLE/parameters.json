@@ -23,26 +23,27 @@
         "rocket_name": "apex02"
     },
     "motors": {
-        "center_of_dry_mass_position": 0,
+        "center_of_dry_mass_position": 0.5,
         "coordinate_system_orientation": "nozzle_to_combustion_chamber",
         "dry_inertia": [
-            0,
-            0,
-            0
+            1.1,
+            0.04,
+            1.1
         ],
-        "dry_mass": 0,
-        "grain_density": 1271.9083054300627,
-        "grain_initial_height": 0.314,
-        "grain_initial_inner_radius": 0.0135,
+        "dry_mass": 12.5,
+        "grain_density": 947,
+        "grain_initial_height": 0.5,
+        "grain_initial_inner_radius": 0.035,
         "grain_number": 1,
-        "grain_outer_radius": 0.027,
+        "grain_outer_radius": 0.063,
         "grain_separation": 0,
-        "grains_center_of_mass_position": 0,
+        "grains_center_of_mass_position": 0.5,
         "nozzle_position": -0.157,
-        "nozzle_radius": 0.02025,
-        "position": 0.9939096209912536,
-        "throat_radius": 0.0135,
-        "thrust_source": "APEX_OUTPUT/thrust_source.csv"
+        "nozzle_radius": 0.0385,
+        "position": null,
+        "throat_radius": 0.0185,
+        "burn_time": 9.0,
+        "thrust_source": "C:/Users/alicj/Desktop/SimBa_Simulations/Simulations/SimLE_SimBa_R7_Rocket.eng"
     },
     "nosecones": {
         "base_radius": 0.035,
@@ -90,5 +91,14 @@
         "time_to_apogee": 18.626
     },
     "tails": {},
-    "trapezoidal_fins": {}
+    "trapezoidal_fins": {
+        "n": 4,
+        "root_chord": 0.204,
+        "tip_chord": 0.136,
+        "span": 0.1016,
+        "sweep_length": 0.034,
+        "cant_angle": 0,
+        "position": 0.353
+
+    }
 }
