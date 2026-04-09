@@ -62,7 +62,7 @@
         "grains_center_of_mass_position": 0.5,
         "nozzle_position": -0.157,
         "nozzle_radius": 0.0385,
-        "position": null,
+        "position": 0,
         "throat_radius": 0.0185,
         "burn_time": 9.0,
         "thrust_source": "C:/Users/alicj/Desktop/SimBa_Simulations/Simulations/SimLE_SimBa_R7_Rocket.eng"
