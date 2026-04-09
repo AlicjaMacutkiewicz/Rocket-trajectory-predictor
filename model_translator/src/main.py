@@ -271,6 +271,13 @@ def init_stochastic_motor_params(path):
     total_impulse_param = motor_data["total_impulse_param"]
     params = (grain_density_param, grain_outer_radius_param, grain_initial_inner_radius_param, grain_initial_height_param, nozzle_radius_param, throat_radius_param, total_impulse_param)
     return params
+
+def init_paths_from_json(main_paths_file):
+    dir = os.path.dirname(__file__)
+    file_name = os.path.join(dir, main_paths_file)
+    with open(file_name, 'r', encoding='utf-8')as file:
+        dataset= json.load(file)
+    return dataset
     
 def parallel_generator(N, json_path, drag_path, environment, heading , rail_length,acc_list,thrust_path,stochastic_motor_params):
     indices = range(N) 
@@ -304,26 +311,36 @@ def main():
         if sys.argv[1] == 'test':
             TEST_FLAG = True
             print_warning("RUNNING IN TEST MODE")
-    json_path = "../../source_model/APEX_OUTPUT/parameters.json"
-    drag_path= "../../source_model/APEX_OUTPUT/drag_curve.csv"
-    thrust_path= "../../source_model/APEX_OUTPUT/thrust_source.csv"
-    
 
-    environment = get_environment_data_from_JSON("config.json")
+    paths = init_paths_from_json("paths.json")
+
+    environment = get_environment_data_from_JSON(paths["config_path"])
+
     acc_list = [] 
-    acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_2g"))
-    acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_4g"))
-    acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_8g"))
-    acc_list.append(init_accelerometer_from_JSON("../sensors/accelerometer.json","LSM9DS1_acc_16g"))
-    acc_list.append(init_gyroscope_from_JSON("../sensors/gyroscope.json","LSM9DS1_gyro_245dps"))
-    acc_list.append(init_gyroscope_from_JSON("../sensors/gyroscope.json","LSM9DS1_gyro_500dps"))
-    acc_list.append(init_gyroscope_from_JSON("../sensors/gyroscope.json","LSM9DS1_gyro_2000dps"))
-    acc_list.append(init_gnss_from_JSON("../sensors/gnss_velocity_heading.json","u-blox_MAX-M10S"))
+    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_2g"))
+    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_4g"))
+    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_8g"))
+    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_16g"))
 
-    heading, rail_length = init_flight_config_from_JSON("config.json")
+    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM9DS1_gyro_245dps"))
+    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM9DS1_gyro_500dps"))
+    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM9DS1_gyro_2000dps"))
+
+    acc_list.append(init_gnss_from_JSON(paths["sensors_path"]["gnss_velocity_heading"], "u-blox_MAX-M10S"))
+
+    heading, rail_length = init_flight_config_from_JSON(paths["config_path"])
     
-    stochastic_motor_params = init_stochastic_motor_params("config.json")
-    parallel_generator(30,json_path,drag_path,environment,heading,rail_length,acc_list,thrust_path, stochastic_motor_params)
+    stochastic_motor_params = init_stochastic_motor_params(paths["config_path"])
+    
+    parallel_generator(2,
+                       paths["source_model_path"]["parameters"],
+                       paths["source_model_path"]["drag_curve"],
+                       environment,heading,
+                       rail_length,
+                       acc_list,
+                       paths["source_model_path"]["thrust_source"],
+                       stochastic_motor_params
+                       )
     
 if __name__=="__main__":
     main()
