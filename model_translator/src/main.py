@@ -211,7 +211,7 @@ def init_gnss_from_JSON(path_to_file, name):
         data= json.load(file)
     gnss_data = data[name]
     gnss = GnssReceiver(
-        name="GNSS",
+        name=gnss_data["name"],
         sampling_rate=gnss_data["sampling_rate"],
         position_accuracy=gnss_data["position_accuracy"],
         altitude_accuracy=gnss_data["altitude_accuracy"]

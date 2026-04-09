@@ -225,12 +225,21 @@ def run_single_simulation(i, rocket, environment_data, heading , rail_length):
         all_accels_df["Best_AngVel_X"] = get_best_angular_velocity(real_angvel_x, "X", all_accels_df, angular_velocity_thresholds)
         all_accels_df["Best_AngVel_Y"] = get_best_angular_velocity(real_angvel_y, "Y", all_accels_df, angular_velocity_thresholds)
         all_accels_df["Best_AngVel_Z"] = get_best_angular_velocity(real_angvel_z, "Z", all_accels_df, angular_velocity_thresholds)
-        
-        final_cols = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z", 
-                      "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z"]
-        almost_df = all_accels_df[final_cols].copy()
+    # return np.select(cond, choices, default=all_accels_df[f"LSM9DS1_gyro_2000dps_{suffix}"])
         all_gnsss_df = pd.concat([item["df"] for item in gnss_data], axis=1)
-        final_df = pd.concat([almost_df,all_gnsss_df])
+        all_gnsss_df.dropna(inplace=True)
+        times_array = all_accels_df.index.values
+      
+      
+        all_accels_df["GNSS_X"] = all_gnsss_df["u-blox_MAX-M10S_X"]
+        all_accels_df["GNSS_Y"] = all_gnsss_df["u-blox_MAX-M10S_Y"]
+        all_accels_df["GNSS_Z"] = all_gnsss_df["u-blox_MAX-M10S_Z"]
+        final_cols = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z", 
+                      "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z", "GNSS_X","GNSS_Y","GNSS_Z"]
+        almost_df = all_accels_df[final_cols].copy()
+        # all_gnsss_df = pd.concat([item["df"] for item in gnss_data], axis=1)
+        # final_df = pd.concat([almost_df,all_gnsss_df])
+        final_df = almost_df
         final_df.to_csv(os.path.join(dir, f"output/flight_{i}_best_sensors.csv"), index_label="Time")
         final_df['flight_id'] = i 
 
