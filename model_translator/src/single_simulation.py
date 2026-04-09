@@ -228,7 +228,9 @@ def run_single_simulation(i, rocket, environment_data, heading , rail_length):
         
         final_cols = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z", 
                       "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z"]
-        final_df = all_accels_df[final_cols].copy()
+        almost_df = all_accels_df[final_cols].copy()
+        all_gnsss_df = pd.concat([item["df"] for item in gnss_data], axis=1)
+        final_df = pd.concat([almost_df,all_gnsss_df])
         final_df.to_csv(os.path.join(dir, f"output/flight_{i}_best_sensors.csv"), index_label="Time")
         final_df['flight_id'] = i 
 
@@ -237,9 +239,9 @@ def run_single_simulation(i, rocket, environment_data, heading , rail_length):
         # return final_df
         # |
 
-    if gnss_data:
-        all_gnsss_df = pd.concat([item["df"] for item in gnss_data], axis=1)
-        all_gnsss_df.to_csv(f"output/flight_{i}_best_gnss.csv", index_label="Time")
+    # if gnss_data:
+    #     all_gnsss_df = pd.concat([item["df"] for item in gnss_data], axis=1)
+    #     all_gnsss_df.to_csv(f"output/flight_{i}_best_gnss.csv", index_label="Time")
 
 #.....
     #wiktor wie lepiej 
