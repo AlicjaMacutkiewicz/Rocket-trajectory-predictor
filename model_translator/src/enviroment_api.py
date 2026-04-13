@@ -13,9 +13,21 @@ from logger import *
 
 # date must be datetime type
 # PROVIDED PATH SHOULD NOT CONTAINT FILE NAME ONLY DIRECTORY
+# This method is not thred save, u need to ensure that no other thred is using same file name 
 def get_enviroment_from_date(environment_data, date,filename, path="../../source_model/ERA5_weather/"):
     os.makedirs(os.path.join(path, "single"), exist_ok=True)
     os.makedirs(os.path.join(path, "levels"), exist_ok=True)
+
+    target_single = os.path.join(path , "single", f"single_{filename}")
+    target_levels= os.path.join(path , "levels", f"levels_{filename}")
+
+    # i dont know why but miltiurl (which is used by cdsapi), leaves 0-byte ghost files
+    # so just if they exist we delete them 
+    if(os.path.exists(target_single)):
+        os.remove(target_single)
+    if(os.path.exists(target_levels)):
+        os.remove(target_levels)
+
     dataset = "reanalysis-era5-single-levels"
     request = {
         "product_type": ["reanalysis"],
@@ -25,22 +37,20 @@ def get_enviroment_from_date(environment_data, date,filename, path="../../source
             "2m_temperature",
             "surface_pressure"
         ],
-         "year": ["2000"],
-         "month": ["10"],
-         "day": ["10"],
-         "time": ["00:00"],
 
+
+        "year": [str(date.year)],
+        "month": [str(date.month)],
+        "day": [str(date.day)],
+        "time": [date.strftime("%h:%m")],
         "data_format": "netcdf4",
         "download_format": "unarchived",
         "area": [54.37, 18.38, 54.12, 18.63]
-        # "year": [str(date.year)],
-        # "month": [str(date.month)],
-        # "day": [str(date.day)],
-        # "time": [date.isoformat(timespec='minutes')],
         }
+
     client = cdsapi.Client()
-    client.retrieve(dataset, request, path+"single/single_"+filename)
-    sl = xr.open_dataset(path+"single/single_"+filename)
+    client.retrieve(dataset, request, target_single)
+    sl = xr.open_dataset(target_single)
     
     dataset = "reanalysis-era5-pressure-levels"
     request = {
@@ -51,10 +61,10 @@ def get_enviroment_from_date(environment_data, date,filename, path="../../source
             "u_component_of_wind",
             "v_component_of_wind"
         ],
-         "year": ["2000"],
-         "month": ["10"],
-         "day": ["10"],
-         "time": ["00:00"],
+        "year": [str(date.year)],
+        "month": [str(date.month)],
+        "day": [str(date.day)],
+        "time": [date.strftime("%h:%m")],
         "pressure_level": [
             "1", "2", "3",
             "5", "7", "10",
@@ -76,8 +86,8 @@ def get_enviroment_from_date(environment_data, date,filename, path="../../source
     }
 
     client = cdsapi.Client()
-    client.retrieve(dataset, request, path+"levels/levels_"+filename)
-    pl = xr.open_dataset(path+"levels/levels_"+filename)
+    client.retrieve(dataset, request, target_levels)
+    pl = xr.open_dataset(target_levels)
     
     g = 9.80665
     geo = pl["z"].data[0].flatten() # geopotential

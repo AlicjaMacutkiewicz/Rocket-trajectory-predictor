@@ -3,6 +3,7 @@ import datetime
 import json
 import os
 import sys
+from enviroment_api import * 
 
 import tqdm
 from logger import *
@@ -277,6 +278,7 @@ def parallel_generator(N, json_path, drag_path, environment, heading , rail_leng
 
   
 def main():
+
     global TEST_FLAG
     if(len(sys.argv) > 1):
         if sys.argv[1] == 'test':
@@ -285,7 +287,6 @@ def main():
     
     paths = init_paths_from_json("paths.json")
     environment = get_environment_data_from_JSON(paths["config_path"])
-
     acc_list = [] 
     acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_2g"))
     acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_4g"))
