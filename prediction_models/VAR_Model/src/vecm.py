@@ -4,4 +4,7 @@ import matplotlib.pyplot as plt
 from statsmodels.tsa.api import VAR
 
 def create_vecm(data):
-    return "lalala"
+    pass
+
+def test_vecm(model, data):
+    pass

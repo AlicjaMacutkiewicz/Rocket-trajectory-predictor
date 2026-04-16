@@ -4,12 +4,11 @@ from statsmodels.tsa.api import VAR
 from statsmodels.tsa.vector_ar.vecm import coint_johansen
 from statsmodels.tsa.stattools import adfuller
 
-from var import create_var
-from vecm import create_vecm
+from var import *
+from vecm import *
  
 def read_sensor_data(directory, index='Time'):
     sensors = pd.read_csv(directory)
-    sensors[index] = pd.to_datetime(sensors[index])
     sensors.set_index(index, inplace=True)
     return sensors
 
@@ -52,9 +51,9 @@ def is_cointegrated(data, col_idx = 1, det_order = -1, max_lag = 20):
     # Calculating the number of lagged differences in the model (k_arr_diff)
     # TODO: when a better approach to calculate lag values is implemented
     #       we can use those lag values here instead of recalculating them
-    res = VAR(data).select_order(maxlags=max_lag)
+    lag_values = VAR(data).select_order(maxlags=max_lag)
 
-    k_ar_diff = res.selected_orders.get("aic")
+    k_ar_diff = lag_values.selected_orders.get("aic")
     if k_ar_diff is None:
        k_ar_diff = 1
 
@@ -75,7 +74,7 @@ def is_cointegrated(data, col_idx = 1, det_order = -1, max_lag = 20):
 
     # Comparing test statistics with critical values
     # If trace statistic is greater than the critical value there is evidence of cointegration
-    return sum(t > c for t, c in zip(trace, crit)) > 0
+    return sum(t > c for t, c in zip(trace, crit)) > 0, lag_values
 
 def choose_model(data, final_diff_order):
     # if the data is already stationary we use VAR
@@ -84,52 +83,79 @@ def choose_model(data, final_diff_order):
         # VAR will not work properly on cointegrated data, therefore
         # we need to do a cointegration test and use a different model
         # if the data is cointegrated
-        if is_cointegrated(data):
+        is_c, lag_values = is_cointegrated(data)
+        if is_c:
             print("The series is cointegrated. The VECM model will be used.")
-            return "VECM"
+            return "VECM", None
         else:
             print("The series is not cointegrated. The VAR model will be used.")
             print(f"The series was differenced {final_diff_order} times.")
-            return "VAR"
+            return "VAR", lag_values
     else:
         print("The series was already stationary. The VAR model will be used.")
-        return "VAR"    
+        return "VAR", None
 
-def prepare_data(data, model, final_diff_order):
-    # preprocessing the data - if it isn't stationary but it also isn't cointegrated
+def prepare_data(data, model, final_diff_order, frac):
+    # preprocessing the data - if it isn't stationary, but it also isn't cointegrated
     # (ie if we use the VAR model for non-stationary data) the whole time series has to be
     # differenced the maximum amount of times needed for a single column to become stationary
     # for a VAR model with data that was already stationary and the VECM model no
     # additional preprocessing is needed
+
     new_data = data.copy()
     if (model=="VAR" and final_diff_order > 0):
         for _ in range(final_diff_order):
             new_data = new_data.diff()
-        return new_data.dropna()
+
+        training_data = new_data.sample(frac=frac, random_state=0)
+        test_data = new_data.drop(training_data.index)
+        return training_data.dropna(), test_data.dropna()
     else:
-        return new_data
+        training_data = new_data.sample(frac=frac, random_state=0)
+        test_data = new_data.drop(training_data.index)
+        return training_data, test_data
 
-# Reading the data from csv files
-# TODO: split the data into a testing and training sets and
-#       check the preferable dataset size for VAR models -
-#       if the data for one flight won't be enough, look into how
-#       can the data from more flights be merged witout messing up
-#       the time series
+if __name__ == '__main__':
+    # Reading the data from csv files
+    # TODO: split the data into a testing and training sets and
+    #       check the preferable dataset size for VAR models -
+    #       if the data for one flight won't be enough, look into how
+    #       can the data from more flights be merged witout messing up
+    #       the time series
 
-training_sensors = read_sensor_data('../../../model_translator/src/output/flight_0_best_sensors.csv')
+    print("start")
 
-# calculating how many times the data needs to be differenced
-# in order for it to become stationary
-final_diff_order = check_final_diff_order(training_sensors)
+    training_sensors = read_sensor_data('../../../model_translator/src/output/flight_0_best_sensors.csv')
 
-# choosing the right model for the dataset (VAR or VECM)
-model_type = choose_model(training_sensors, final_diff_order)
+    print("checking final difference")
 
-data = prepare_data(training_sensors, model_type, final_diff_order)
+    # calculating how many times the data needs to be differenced
+    # in order for it to become stationary
+    final_diff_order = check_final_diff_order(training_sensors)
 
-# TODO: calculate lag order here
+    print("choosing model")
 
-if model_type=="VAR":
-    model = create_var(data)
-else:
-    model = create_vecm(data)
+    # choosing the right model for the dataset (VAR or VECM)
+    model_type, lag_values = choose_model(training_sensors, final_diff_order)
+
+    print("preparing data")
+
+    # todo frac to config
+    training_data, test_data = prepare_data(training_sensors, model_type, final_diff_order, 0.8)
+
+    # TODO: calculate lag order here
+
+    if model_type=="VAR":
+        model = create_var(training_data)
+
+        if lag_values is None:
+            lag_values = model.select_order(maxlags=20)
+
+        result = model.fit()
+        print(test_var(model, test_data))
+    else:
+        model = create_vecm(training_data)
+
+        result = model.fit()
+
+        print(test_vecm(model, test_data))
