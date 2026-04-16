@@ -1,0 +1,147 @@
+{
+    "elliptical_fins": {},
+     "tank": {
+        "liquid": {
+            "name": "nitrous oxide",
+            "density": 790
+        },
+        "oxidizer": {
+            "name": "nitrous oxide",
+            "density": 180
+        },
+        "geometry": {
+            "radius": 0.087,
+            "height": 0.700
+        },
+        "name": "oxidizer_tank_r7",
+        "flux_time": 4.9,
+        "initial_liquid_mass": 9.87,
+        "initial_gas_mass": 0.13,
+        "liquid_mass_flow_rate_in": 0,
+        "liquid_mass_flow_rate_out": 2,
+        "gas_mass_flow_rate_in": 0,
+        "gas_mass_flow_rate_out": 0
+    },
+    "environment": {
+        "base_pressure": null,
+        "base_temperature": null,
+        "date": null,
+        "elevation": 624,
+        "geodetic_method": null,
+        "latitude": 12,
+        "longitude": -117.81006429132387,
+        "wind_average": null,
+        "wind_turbulence": null
+    },
+    "flight": {
+        "heading": 90.0,
+        "inclination": 90.0,
+        "rail_length": 1.0
+    },
+    "id": {
+        "comment": null,
+        "designer": "Kacper Śmieżewski",
+        "filepath": "rocket.ork",
+        "rocket_name": "apex02"
+    },
+    "motors": {
+        "center_of_dry_mass_position": 0.5,
+        "coordinate_system_orientation": "nozzle_to_combustion_chamber",
+        "dry_inertia": [
+            1.1,
+            0.04,
+            1.1
+        ],
+        "dry_mass": 12.5,
+        "grain_density": 947,
+        "grain_initial_height": 0.5,
+        "grain_initial_inner_radius": 0.035,
+        "grain_number": 1,
+        "grain_outer_radius": 0.063,
+        "grain_separation": 0,
+        "grains_center_of_mass_position": 0.5,
+        "nozzle_position": -0.157,
+        "nozzle_radius": 0.0385,
+        "position": null,
+        "throat_radius": 0.0185,
+        "burn_time": 9.0,
+        "thrust_source": null 
+    },
+    "nosecones": {
+        "base_radius": null,
+        "kind": "powerseries",
+        "length": 0.750,
+        "name": "Nose Cone",
+        "power": 0.8,
+        "bluffness": null,
+        "position": 3.917
+    },
+    "parachutes": {
+        "main": {
+            "name": "main",
+            "cd_s": 10.706,
+            "trigger": 550,
+            "sampling_rate": 100,
+            "lag": 3,
+            "noise":[ 0,0,0]
+        },
+        "drouge": {
+            "name": "drogue",
+            "cd_s": 1.43,
+            "trigger": "apogee",
+            "sampling_rate": 100,
+            "lag": 3,
+            "noise":[ 0,0,0]
+        }
+    },
+    "rail_buttons": {
+        "upper_button_position": 1.91455,
+        "lower_button_position": 0.94021,
+        "angular_position": 10
+    },
+    "rocket": {
+        "center_of_mass_without_motor": 1.94828,
+        "coordinate_system_orientation": "tail_to_nose",
+        "power_off_drag":null,
+        "power_on_drag": null,
+        "inertia": [
+            0.000,
+            0.000,
+            0.000
+        ],
+        "mass": 25.0,
+        "radius": 0.087
+    },
+    "stored_results": {
+        "burnout_stability_margin": 4.635,
+        "flight_time": 450.916,
+        "ground_hit_velocity": 6.338,
+        "launch_rod_velocity": 13.291,
+        "max_acceleration": 109.861,
+        "max_altitude": 1847.2,
+        "max_mach": 0.693,
+        "max_stability_margin": 4.705,
+        "max_thrust": 553.889,
+        "max_velocity": 234.249,
+        "min_stability_margin": 0.0,
+        "time_to_apogee": 18.626
+    },
+    "tail": {
+        "top_radius": 0.087,
+        "bottom_radius": 0.072,
+        "length": 0.095,
+        "position": 0.095,
+        "slant_length": 0.0835,
+        "surface_area": 0.0478365
+    },
+    "trapezoidal_fins": {
+        "n": 4,
+        "root_chord": 0.204,
+        "tip_chord": 0.136,
+        "span": 0.1016,
+        "sweep_length": 0.034,
+        "cant_angle": 0,
+        "position": 0.353
+
+    }
+}
