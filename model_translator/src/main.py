@@ -274,42 +274,46 @@ def parallel_generator(N, json_path, drag_path, env_base, heading , rail_length,
 
 def main():
 
+    import time
+
     global TEST_FLAG
     if len(sys.argv) > 1:
         if sys.argv[1] == 'test':
             TEST_FLAG = True
             Log.print_warning("RUNNING IN TEST MODE")
     
-    paths = init_paths_from_json("paths.json")
-    environment_data = get_environment_data_from_JSON(paths["config_path"])
-    acc_list = [] 
-    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_2g"))
-    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_4g"))
-    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_8g"))
-    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_16g"))
-
-    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM9DS1_gyro_245dps"))
-    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM9DS1_gyro_500dps"))
-    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM9DS1_gyro_2000dps"))
-
-    acc_list.append(init_gnss_from_JSON(paths["sensors_path"]["gnss_velocity_heading"], "u-blox_MAX-M10S"))
-
-    heading, rail_length = init_flight_config_from_JSON(paths["config_path"])
+    for i in range(20):
+        start_time = time.time()
+        paths = init_paths_from_json("paths.json")
+        environment_data = get_environment_data_from_JSON(paths["config_path"])
+        acc_list = [] 
+        acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_2g"))
+        acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_4g"))
+        acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_8g"))
+        acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_16g"))
     
-    stochastic_motor_params = init_stochastic_motor_params(paths["config_path"])
+        acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM9DS1_gyro_245dps"))
+        acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM9DS1_gyro_500dps"))
+        acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM9DS1_gyro_2000dps"))
     
-    flight_simulation_amount_for_scenario = 10
-    date  = datetime.datetime(2005 , 12 , 10)
-    env_base = get_enviroment_from_date(environment_data, date, "ENV_DATA_"+date.strftime("%Y-%m-%d_%H:%M"))
-    parallel_generator(flight_simulation_amount_for_scenario,
-                       paths["source_model_path"]["parameters"],
-                       paths["source_model_path"]["drag_curve"],
-                       env_base,heading,
-                       rail_length,
-                       acc_list,
-                       paths["source_model_path"]["thrust_source"],
-                       stochastic_motor_params
-                       )
-
+        acc_list.append(init_gnss_from_JSON(paths["sensors_path"]["gnss_velocity_heading"], "u-blox_MAX-M10S"))
+    
+        heading, rail_length = init_flight_config_from_JSON(paths["config_path"])
+        
+        stochastic_motor_params = init_stochastic_motor_params(paths["config_path"])
+        
+        flight_simulation_amount_for_scenario = 10
+        date  = datetime.datetime(2005 , 12 , 10)
+        env_base = get_enviroment_from_date(environment_data, date, "ENV_DATA_"+date.strftime("%Y-%m-%d_%H:%M"))
+        parallel_generator(flight_simulation_amount_for_scenario,
+                           paths["source_model_path"]["parameters"],
+                           paths["source_model_path"]["drag_curve"],
+                           env_base,heading,
+                           rail_length,
+                           acc_list,
+                           paths["source_model_path"]["thrust_source"],
+                           stochastic_motor_params
+                           )
+        print("CZAS: %s" % (time.time() - start_time))
 if __name__=="__main__":
     main()

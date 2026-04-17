@@ -52,7 +52,7 @@ def apply_sensor_dropout(current_flight, frame, rng):
     times = frame.index.values
     g = 9.80665
     Log.print_info(f"sensor dropout for length {len(times)}")
-    for _ in range(len(times)//10):
+    for _ in range(len(times)//30):
         i = np.random.randint(0, len(times))
         ax = current_flight.ax(times[i])
         ay = current_flight.ay(times[i])
@@ -139,13 +139,14 @@ def run_single_simulation(i, rocket, environment, heading , rail_length, rng):
         # todo wydaje mi sie ze to moze byc szybsze:
         #  current_flight.ax(times)
         #  Pawel
-        real_acc_x = np.array([current_flight.ax(t) for t in times_array])
-        real_acc_y = np.array([current_flight.ay(t) for t in times_array])
-        real_acc_z = np.array([current_flight.az(t) for t in times_array])
+        real_acc_x = current_flight.ax(times_array)
+        real_acc_y = current_flight.ax(times_array)
+        real_acc_z = current_flight.ax(times_array)
 
-        real_angvel_x = np.array([current_flight.w1(t) for t in times_array])
-        real_angvel_y = np.array([current_flight.w2(t) for t in times_array])
-        real_angvel_z = np.array([current_flight.w3(t) for t in times_array])
+        real_angvel_x =  current_flight.w1(times_array)
+        real_angvel_y =  current_flight.w2(times_array)
+        real_angvel_z =  current_flight.w3(times_array)
+
 
         acceleration_thresholds = [19.613, 39.227, 78.453] #m/s^2
         angular_velocity_thresholds = [245, 500]           #dps
