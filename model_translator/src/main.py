@@ -242,8 +242,6 @@ def parallel_generator(N, json_path, drag_path, env_base, heading , rail_length,
     with open(json_path, 'r', encoding='utf-8') as file:
         model_data = json.load(file)
 
-    for el in acc_list:
-        el.sampling_rate/=20
     base_motor = init_base_motor_from_JSON(model_data, thrust_path)
     stochastic_motor = init_stochastic_motor(base_motor,stochastic_motor_params)
     def worker(i):
