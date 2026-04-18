@@ -8,7 +8,7 @@ import tqdm
 import enviroment_api
 from logger import *
 from pathos.multiprocessing import ProcessPool
-from rocketpy import Environment, SolidMotor, Rocket, Accelerometer, Gyroscope, GnssReceiver
+from rocketpy import Environment, SolidMotor, Rocket, Accelerometer, Gyroscope
 from rocketpy.stochastic import StochasticEnvironment, StochasticSolidMotor
 
 from logger import *
@@ -47,10 +47,11 @@ def init_rocket_from_JSON(data, drag_curve_csv, motor):
     rocket.add_nose(
                 length = nose_data["length"],
                 kind = nose_data["kind"],
-                position = nose_data["position"]
+                position = nose_data["position"],
+                power = nose_data["power"]
             )
     Log.print_info("loading fins")
-    fins = data["trapezoidal_fins"]
+    fins = data["trapezoidal_fins"]["0"]
     rocket.add_trapezoidal_fins(
                 n = fins["number"],
                 root_chord = fins["root_chord"],
@@ -60,14 +61,21 @@ def init_rocket_from_JSON(data, drag_curve_csv, motor):
                 sweep_length = fins["sweep_length"]
             )
 
-    parachute_data = data["parachutes"]["0"]
-    Log.print_info("loading parachute")
-    rocket.add_parachute(
-                name = parachute_data["name"],
-                cd_s = parachute_data["cds"],
-                trigger = parachute_data["deploy_event"],
-                lag = parachute_data["deploy_delay"]
-            )
+    parachutes = data["parachutes"]
+
+    for p_id in parachutes:
+        p_data = parachutes[p_id]
+        if p_data["deploy_event"] == "apogee":
+            p_trigger = "apogee"
+        else:
+            p_trigger = p_data["deploy_altitude"]
+
+        rocket.add_parachute(
+            name=p_data["name"],
+            cd_s=p_data["cds"],
+            trigger=p_trigger,
+            lag=p_data["deploy_delay"]
+        )
     return rocket
 
 def init_base_motor_from_JSON(data, thrust_source_csv):
@@ -88,7 +96,7 @@ def init_base_motor_from_JSON(data, thrust_source_csv):
         grains_center_of_mass_position = motor_data["grains_center_of_mass_position"],
         center_of_dry_mass_position = motor_data["center_of_dry_mass_position"],
         nozzle_position = motor_data["nozzle_position"],
-        burn_time = 10.0, #declared based on in third static fire test
+        # burn_time = 10.0, #declared based on in third static fire test
         throat_radius = motor_data["throat_radius"],
         coordinate_system_orientation = motor_data["coordinate_system_orientation"]
     )
@@ -190,18 +198,6 @@ def init_gyroscope_from_JSON(path_to_file, name):
     )
     return gyroscope
 
-def init_gnss_from_JSON(path_to_file, name):
-    with open(path_to_file, 'r', encoding = 'utf-8')as file:
-        data = json.load(file)
-    gnss_data = data[name]
-    gnss = GnssReceiver(
-        name = gnss_data["name"],
-        sampling_rate = gnss_data["sampling_rate"],
-        position_accuracy = gnss_data["position_accuracy"],
-        altitude_accuracy = gnss_data["altitude_accuracy"]
-    )
-    return gnss
-
 def add_gyro_to_rocket(rocket , gyro_list):
     gyro_list.sort(key = lambda x: x.measurement_range)
     for g in gyro_list:
@@ -238,7 +234,7 @@ def init_paths_from_json(main_paths_file):
         dataset = json.load(file)
     return dataset
     
-def parallel_generator(N, json_path, drag_path, env_base, heading , rail_length,acc_list,thrust_path,stochastic_motor_params):
+def parallel_generator(N, json_path, drag_path, env_base, heading , rail_length,acc_list,thrust_path,stochastic_motor_params, acceleration_thresholds, angular_velocity_thresholds):
     indices = range(N) 
     def worker(i):
         profiler = cProfile.Profile()
@@ -261,7 +257,7 @@ def parallel_generator(N, json_path, drag_path, env_base, heading , rail_length,
         environment = st_environment.create_object()
         rng = np.random.default_rng(i)
 
-        result =  run_single_simulation(i, rocket, environment, heading, rail_length,rng)
+        result =  run_single_simulation(i, rocket, environment, heading, rail_length, rng, acceleration_thresholds, angular_velocity_thresholds)
 
         profiler.disable()
         profiler.dump_stats(f"output/worker_{i}_profile.prof") 
@@ -284,20 +280,26 @@ def main():
     paths = init_paths_from_json("paths.json")
     environment_data = get_environment_data_from_JSON(paths["config_path"])
     acc_list = [] 
-    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_2g"))
-    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_4g"))
-    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_8g"))
-    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM9DS1_acc_16g"))
+    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM6DSOX_acc_2g"))
+    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM6DSOX_acc_4g"))
+    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM6DSOX_acc_8g"))
+    acc_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM6DSOX_acc_16g"))
 
-    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM9DS1_gyro_245dps"))
-    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM9DS1_gyro_500dps"))
-    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM9DS1_gyro_2000dps"))
-
-    acc_list.append(init_gnss_from_JSON(paths["sensors_path"]["gnss_velocity_heading"], "u-blox_MAX-M10S"))
+    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM6DSOX_gyro_125dps"))
+    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM6DSOX_gyro_250dps"))
+    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM6DSOX_gyro_500dps"))
+    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM6DSOX_gyro_1000dps"))
+    acc_list.append(init_gyroscope_from_JSON(paths["sensors_path"]["gyroscope"],"LSM6DSOX_gyro_2000dps"))
 
     heading, rail_length = init_flight_config_from_JSON(paths["config_path"])
     
     stochastic_motor_params = init_stochastic_motor_params(paths["config_path"])
+
+    with open(paths["config_path"], 'r') as file:
+        config_data = json.load(file)
+
+    acceleration_thresholds = config_data["thresholds"]["acceleration"]
+    angular_velocity_thresholds = config_data["thresholds"]["angular_velocity"]
     
     flight_simulation_amount_for_scenario = 10
     date  = datetime.datetime(2005 , 12 , 10)
@@ -309,7 +311,9 @@ def main():
                        rail_length,
                        acc_list,
                        paths["source_model_path"]["thrust_source"],
-                       stochastic_motor_params
+                       stochastic_motor_params,
+                       acceleration_thresholds,
+                       angular_velocity_thresholds
                        )
 
 if __name__=="__main__":

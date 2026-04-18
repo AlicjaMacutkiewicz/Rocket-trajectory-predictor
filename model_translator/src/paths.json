@@ -3,7 +3,8 @@
     "sensors_path": {
         "accelerometer": "../../source_model/R7_SIMLE/sensors/accelerometer.json",
         "gyroscope":"../../source_model/R7_SIMLE/sensors/gyroscope.json",
-        "gnss_velocity_heading": "../../source_model/R7_SIMLE/sensors/gnss_velocity_heading.json"
+        "barometer":"../../source_model/R7_SIMLE/sensors/barometer.json",
+        "thermometer":"../../source_model/R7_SIMLE/sensors/thermometer.json"
     },
     "source_model_path": {
         "parameters": "../../source_model/R7_SIMLE/R7_OUTPUT/parameters.json",
