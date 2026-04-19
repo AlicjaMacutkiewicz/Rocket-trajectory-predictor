@@ -1,14 +1,10 @@
-import json
-import pickle
-
-import pandas as pd
-import numpy as np
-from statsmodels.tsa.api import VAR
-from statsmodels.tsa.vector_ar.vecm import coint_johansen
+from sklearn.preprocessing import StandardScaler
 from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.vector_ar.vecm import coint_johansen
 
 from var import *
 from vecm import *
+
 
 def read_sensor_data(directory, index='Time'):
     sensors = pd.read_csv(directory)
@@ -77,10 +73,7 @@ def is_cointegrated(data, col_idx = 1, det_order = -1, max_lag = 20):
 
     # Comparing test statistics with critical values
     # If trace statistic is greater than the critical value there is evidence of cointegration
-    r = 0
-    for i in range(len(trace)):
-        if trace[i] > crit[i]:
-            r = i + 1
+    r = sum(trace > crit)
     return r > 0, lag_values, r
 
 def choose_model(data, final_diff_order):
@@ -122,12 +115,26 @@ def prepare_data(data, model, final_diff_order, frac):
         split = int(len(new_data) * frac)
         training_data = new_data.iloc[:split]
         test_data = new_data.iloc[split:]
-        return training_data, test_data
+
+        scaler = StandardScaler()
+        scaled_training_data = pd.DataFrame(
+            scaler.fit_transform(training_data),
+            columns=training_data.columns,
+            index=training_data.index
+        )
+
+        scaled_test_data = pd.DataFrame(
+            scaler.fit_transform(test_data),
+            columns=test_data.columns,
+            index=test_data.index
+        )
+
+        return scaled_training_data, scaled_test_data
 
 # iterates through all specified parameters and chooses the best model
 # super expensive in resources
 # todo check results on fast computer
-def find_best_parameters_for_VECM(data, max_r, max_lag, current_result):
+def find_best_parameters_for_VECM_bruteforce(data, max_r, max_lag, current_result):
     best_aic = np.inf
     best_r = 1
     best_lag = 1
@@ -202,26 +209,16 @@ if __name__ == '__main__':
         result = model.fit()
         print(test_var(model, test_data))
     else:
-        lag_order = lag_values.selected_orders["aic"]
-        model = create_vecm(training_data, lag_order, r)
+        #lag_order = lag_values.selected_orders["aic"]
+        #model = create_vecm(training_data, lag_order, r)
 
-        result = model.fit()
+        #result = model.fit()
 
-        r, lag, result = find_best_parameters_for_VECM(data=training_data, max_r=6, max_lag=6, current_result=result)
+        #r, lag, result = find_best_parameters_for_VECM_bruteforce(data=training_data, max_r=6, max_lag=6, current_result=result)
 
+        result = create_vecm(training_data, lag_values.aic, r)
+        result = train_vecm(result)
+        save_vecm(result, lag_values.aic, r)
 
-
-        with open("model.pkl", "wb") as f:
-            pickle.dump(result, f)
-
-        meta = {
-            "diff_order": final_diff_order,
-            "lag": lag,
-            "rank": r,
-            "columns": list(training_data.columns)
-        }
-
-        with open("meta.json", "w") as f:
-            json.dump(meta, f)
 
     test_vecm(result, test_data, n=500)

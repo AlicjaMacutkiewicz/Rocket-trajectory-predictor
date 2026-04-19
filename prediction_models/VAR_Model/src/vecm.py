@@ -1,3 +1,6 @@
+import json
+import pickle
+
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -7,6 +10,21 @@ from statsmodels.tsa.vector_ar.vecm import VECM
 def create_vecm(data, lag, r):
     model = VECM(data, k_ar_diff=lag, coint_rank=r)
     return model
+
+def train_vecm(model):
+    return model.fit()
+
+def save_vecm(model, lag, r):
+    with open("model.pkl", "wb") as f:
+        pickle.dump(model, f)
+
+    meta = {
+        "lag": int(lag),
+        "rank": int(r)
+    }
+
+    with open("meta.json", "w") as f:
+        json.dump(meta, f)
 
 def test_vecm(fitted_model, test_data, n):
     prediction = fitted_model.predict(steps=n)
@@ -48,9 +66,8 @@ def test_vecm(fitted_model, test_data, n):
         plt.plot(x, test_i, label="Test")
         plt.title(types[i])
         plt.legend()
-        plt.show()
         plt.savefig(f"{types[i]}_plot.png")
-        plt.close()
+        plt.show()
 
     df = pd.DataFrame(results)
     df.to_csv("results.csv", index=False)
