@@ -8,7 +8,8 @@ import tqdm
 from logger import *
 from pathos.multiprocessing import ProcessPool
 from rocketpy import Environment, SolidMotor, Rocket, Accelerometer, Gyroscope, Barometer
-from rocketpy.stochastic import StochasticEnvironment, StochasticSolidMotor
+from rocketpy.stochastic import StochasticEnvironment, StochasticSolidMotor, StochasticRocket
+from rocketpy.simulation import MonteCarlo
 
 from logger import *
 from single_simulation import run_single_simulation
@@ -271,15 +272,15 @@ def parallel_generator(N, json_path, drag_path, env_base, heading , rail_length,
            
         sampled_motor = stochastic_motor.create_object()
         stochastic_motor._set_stochastic(seed = i)
-
         rocket = init_rocket_from_JSON(model_data,drag_path,sampled_motor)
         rocket = add_sensors_to_rocket(rocket, sensor_list)
-
         st_environment = StochasticEnvironment(environment=env_base)
         environment = st_environment.create_object()
         rng = np.random.default_rng(i)
-
-        result =  run_single_simulation(i, rocket, environment, heading, rail_length, rng, acceleration_thresholds, angular_velocity_thresholds)
+        st_rocket_blueprint = init_stochastic_rocket(rocket)
+        sampled_rocket = st_rocket_blueprint.create_object()
+        # stochastic_rocket.visualize_attributes()
+        result =  run_single_simulation(i, sampled_rocket, environment, heading, rail_length, rng, acceleration_thresholds, angular_velocity_thresholds)
 
         profiler.disable()
         profiler.dump_stats(f"output/worker_{i}_profile.prof") 
@@ -290,6 +291,58 @@ def parallel_generator(N, json_path, drag_path, env_base, heading , rail_length,
         results = list(tqdm.tqdm(pool.uimap(worker, indices), total = N, desc = "Siupi dupi Grzesiu dawaj"))
     return results
 
+def init_stochastic_rocket(rocket):
+    stochastic_rocket = StochasticRocket(
+        rocket = rocket,
+        )
+    return stochastic_rocket
+
+def run_builtin_monte_carlo(stochastic_rocket, stochastic_env, heading, rail_length, n_sims=10):
+    Log.print_info("--- Initializing Built-in Monte Carlo (Strict Export Mode) ---")
+    
+    from rocketpy import Flight
+    from rocketpy.stochastic import StochasticFlight 
+    from rocketpy.simulation import MonteCarlo
+    
+    temp_rocket = stochastic_rocket.create_object()
+    temp_env = stochastic_env.create_object()
+    
+    test_flight = Flight(
+        rocket=temp_rocket,
+        environment=temp_env,
+        heading=heading,
+        rail_length=rail_length,
+        terminate_on_apogee=True
+    )
+    
+    stochastic_flight = StochasticFlight(
+        flight=test_flight,
+        rail_length=rail_length, 
+        inclination=89,
+        heading=heading
+    )
+    
+    safe_export_list = [
+        "apogee", 
+        "max_speed"
+    ]
+    
+    mc = MonteCarlo(
+        filename="builtin_mc_results", 
+        environment=stochastic_env,
+        rocket=stochastic_rocket,
+        flight=stochastic_flight,
+        export_list=safe_export_list
+    )
+    
+    try:
+        results = mc.simulate(number_of_simulations=n_sims)
+        print("\n=== MONTE CARLO SUCCESS ===")
+        results.print_summary()
+        return results
+    except Exception as e:
+        Log.print_warning(f"Built-in failed: {e}")
+        return None
 
 def main():
 
@@ -338,6 +391,25 @@ def main():
                        acceleration_thresholds,
                        angular_velocity_thresholds
                        )
+    
+    with open(paths["source_model_path"]["parameters"], 'r', encoding='utf-8') as file:
+        model_data = json.load(file)
+    base_motor = init_base_motor_from_JSON(model_data, paths["source_model_path"]["thrust_source"])
+    stochastic_motor = init_stochastic_motor(base_motor,stochastic_motor_params)
+    sampled_motor = stochastic_motor.create_object()
+    stochastic_motor._set_stochastic(seed = 10)
+    rocket = init_rocket_from_JSON(model_data,paths["source_model_path"]["drag_curve"],sampled_motor)
+    rocket = add_sensors_to_rocket(rocket, sensor_list)
+    st_environment = StochasticEnvironment(environment=env_base)
+    stochastic_rocket = init_stochastic_rocket(rocket)
+
+    builtin_results = run_builtin_monte_carlo(
+        stochastic_rocket,
+        st_environment, 
+        heading, 
+        rail_length, 
+        n_sims=flight_simulation_amount_for_scenario
+    )
 
 if __name__=="__main__":
     main()
