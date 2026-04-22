@@ -1,7 +1,7 @@
 {
   "BME280_barometer": {
     "sampling_rate": 83.0,
-    "measurement_range": [110000.0, 30000.0],
+    "measurement_range": [30000.0, 110000.0],
     "resolution": 577.0,
     "noise_density": 0.0,
     "noise_variance": 1.69,
