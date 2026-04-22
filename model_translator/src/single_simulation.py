@@ -151,7 +151,7 @@ def run_single_simulation(i, rocket, environment, heading , rail_length, rng, ac
         final_df = all_accels_df[final_cols].copy()
         final_df.ffill(inplace=True)
         final_df.bfill(inplace=True)
-        final_df.to_csv(os.path.join(dir, f"output/flight_{i}_test_sensors.csv"), index_label="Time")
+        # final_df.to_csv(os.path.join(dir, f"output/flight_{i}_test_sensors.csv"), index_label="Time")
         final_df['flight_id'] = i 
         Log.print_info(f"Pakowanko... {i}")
         final_df.to_parquet(f"output/flight_{i}.parquet", index=True)

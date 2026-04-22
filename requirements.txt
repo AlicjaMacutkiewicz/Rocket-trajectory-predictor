@@ -1,0 +1,9 @@
+cdsapi
+fastparquet
+pathos
+pip
+pyarrow
+rocketpy
+snakeviz
+torch
+xarray

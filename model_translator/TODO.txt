@@ -16,12 +16,16 @@ Do zrobienia:
 #(WIKTOR)    9. Poprawa raportowania stanu przetwarzania (jakiś output ile już mamy przemielone a ile jeszcze nie)
 
 --- ETAP 2 ---
-#(RAZEM AZ)  10. code review tego co już mamy
- (RAZEM AZ)  11. optymalizacja jeśli jest jeszcze co
-#(M + WERKA) 12. zaraportowanie dokładnie co i dlaczego mamy zrobione
- (WERONIKA)  13. zamiana konkretnych danych pojazdu na R7
- (EMILIA)    14. kontrola czy scenariusze się nie duplikują za bardzo i dobór tak ich ilości żeby tego uniknąć
- (EMILIA)    15. zamiana formatu zapisu danych na parquet albo inny kolumnowy 
-#(PAWEŁ)     16. logowanie do osobnego pliku
- (RAZEM AZ)  17. spuszczenie Grzecha z smyczy
+#(RAZEM AZ) 10. code review tego co już mamy
+#(RAZEM AZ) 11. optymalizacja jeśli jest jeszcze co
+#(WERONIKA) 12. zaraportowanie dokładnie co i dlaczego mamy zrobione
+#(EMILIA)   13. zamiana konkretnych danych pojazdu na R7
+#(WIKTOR)   14. zamiana formatu zapisu danych na parquet albo inny kolumnowy 
+#(PAWEŁ)    15. logowanie do osobnego pliku
+ 
+ --- ETAP 3 ---
+ (PAWEŁ)    16. analiza różnic statystycznych między generowanymi lotami
+ (EMILIA)   17. podsumowanie dzialania generatora, opis wprowadzonych mechanik
+ (EMILIA)   18. lekkie dopasowanie do dzialania na gpu
+ (RAZEM AZ) 19. spuszczenie Grzecha z smyczy
 

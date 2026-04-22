@@ -13,6 +13,16 @@ from logger import *
 from single_simulation import run_single_simulation
 import cProfile
 
+
+NUM_GPUS = 0
+try:
+    import cupy as cp
+    NUM_GPUS = cp.cuda.runtime.getDeviceCount()
+    Log.print_info(f"detected {NUM_GPUS} gpus, hardware acceleration enabled")
+except Exception:
+    cp = np 
+    print(" No gpus detected, back to cpu mode")
+
 # @BRIEF
 # Initializes rocket with data found in give JSON file
 # @ARGUMENTS: 
@@ -263,9 +273,18 @@ def parallel_generator(N, json_path, drag_path, env_base, heading , rail_length,
 
     base_motor = init_base_motor_from_JSON(model_data, thrust_path)
     stochastic_motor = init_stochastic_motor(base_motor,stochastic_motor_params)
+
     def worker(i):
-        profiler = cProfile.Profile()
-        profiler.enable()
+        if hasattr(cp, 'cuda'):
+            gpu_count = cp.cuda.runtime.getDeviceCount()
+            if gpu_count > 0:
+                gpu_id = i % gpu_count
+                os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+                cp.cuda.Device(gpu_id).use()
+
+        #profiling
+        # profiler = cProfile.Profile()
+        # profiler.enable()
 
         np.random.seed(i)
            
@@ -281,8 +300,9 @@ def parallel_generator(N, json_path, drag_path, env_base, heading , rail_length,
 
         result =  run_single_simulation(i, rocket, environment, heading, rail_length, rng, acceleration_thresholds, angular_velocity_thresholds)
 
-        profiler.disable()
-        profiler.dump_stats(f"output/worker_b{i}_profile.prof") 
+        #profiling
+        # profiler.disable()
+        # profiler.dump_stats(f"output/worker_b{i}_profile.prof") 
         
         return result
     
