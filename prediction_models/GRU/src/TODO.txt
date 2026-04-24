@@ -1,0 +1,52 @@
+GRU TODO:
+- wykorzystać zaimplementowane gru zeby zobaczyc czy poprawnie dziala na przykładzie:
+    > zaimportować pare scenariuszy lotu
+    > wyciągnąć z tego dane o realnym przyspieszeniu w czasie (Acceleration_X/Y/Z)
+    > zaimplementować funkcję straty typu MSE
+    > nakarmić tym sieć
+    > zobaczyć jak sobie radzi poprzez analizę funkcji straty po każdej iteracji (średnia wartość f. straty, jakiś wykresik)
+    
+- zamienić żeby zamiast całego przyspieszenia na wyjściu dostawać tylko fragment odpowiadający za nieliniowe zmiany w torze
+    (odsyłam do dokumentacji - segment s, rozbicie na x_s i x_b):
+    > zaimplementować prostą funkcję realizującą obliczenie x_b w danym momencie t
+    > zmienić postać funkcji straty na złożoną, wprowadzając architekturę PINN:
+
+        1. bazowe MSE
+            - zaimplementować funkcję obliczającą znane zjawiska 
+                x_b (grawitacja, ciąg) w czasie t
+            - sieć na wyjściu ma generować tylko nieliniowy człon 
+                x_s (wiatr, opór)
+            - obliczyć pierwszą część straty jako zwykłe MSE,
+                MSE_acc = loss(sieć_x_s, prawdziwe_x_s), 
+                gdzie prawdziwe_x_s = x_całkowite - x_b
+
+        2. PINN_loss (Więzy fizyczne / Całkowanie)
+            - złożyć z powrotem całkowite estymowane przyspieszenie: 
+                dodajemy wyjście z sieci do analitycznego x_b
+            - wycałkować to przyspieszenie (równania kinematyki Newtona), 
+                aby uzyskać estymowaną prędkość i pozycję w kolejnych krokach
+            - obliczyć błąd dla tych wycałkowanych wartości: 
+                PINN_loss = loss(wycałkowana_pozycja, prawdziwa_pozycja_z_symulatora).
+
+        3. finalna funkcja straty
+            - Połączyć oba kryteria za pomocą hiperparametru lambda (określającego moc więzów fizycznych):
+                total_Loss = MSE_acc + (lambda * PINN_loss)
+                (uwaga: sieć musi być w stanie zoptymalizować Total_Loss – autograd/backpropagation
+                 musi przejść bez problemu przez operację całkowania)
+
+    > od nowa nakarmić tym sieć
+    > porównać wyniki poprzedniej wersji do aktualnej, tyle że teraz x = x_s + x_b a wtedy było x = x_s (caly wynik z sieci)
+        (średnia wartość f. straty, jakiś wykresik)
+
+- spróbować zaimplementować sieć działającą w dwóch trybach 
+    1. tryb dostrajania (Spin-Up) - sieć działa na realnym wejsciu z czujników
+    2. tryb przewidywania (Cut-off) - sieć zapętla swoje wyjście na kolejne wejście
+
+    w tym celu:
+    > dodać flagę określającą czy aktualnie dostaje realne dane czy syntetyczne (swoje)
+    > dodać logikę zapętlania sieci przy podniesionej fladze
+    > zamienić odpowiednio wejścia, tak żeby rzeczywiście teraz gdy mamy dane z czujników to one są na wejściu i dostrajają sieć
+    > gdy danych nie ma, należe dodać wynik z poprzedniego kroku do wartości z segmentu b i zapętlić
+    > wprowadzić trening tzw. sequence-to-sequence, czyli losować sobie moment gdy sieć jest odcinana od danych i ma przewidywać
+    > nakarmić sieć realnymi danymi z czujników
+    > porównać wyniki poprzednich wersji do aktualnej (średnia wartość f. straty, jakiś wykresik)
