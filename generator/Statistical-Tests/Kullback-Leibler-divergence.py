@@ -7,13 +7,12 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy.special import rel_entr
 
-columns = [
-    'Best_Acc_X', 'Best_Acc_Y', 'Best_Acc_Z',
-    'Best_AngVel_X', 'Best_AngVel_Y', 'Best_AngVel_Z',
-    'Thrust', 'Barometer_Value', 'Sensor_Value'
-]
+columns = ['Best_Acc_X', 'Best_Acc_Y', 'Best_Acc_Z', 'Best_AngVel_X',
+       'Best_AngVel_Y', 'Best_AngVel_Z', 'Barometer_Value', 'Sensor_Value',
+       'Thrust', 'Mass', 'Position_X', 'Position_Y', 'Position_Z',
+       'Acceleration_X', 'Acceleration_Y', 'Acceleration_Z']
 
-N = 10
+N = 11
 bins = 30
 
 matrix = np.zeros((N, N))
