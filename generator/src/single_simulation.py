@@ -8,6 +8,8 @@ from enviroment_api import *
 
 from logger import *
 
+from numba import njit, prange
+
 # @BRIEF
 # cretes string based on rp.solution_array, without np.float type signature
 # @ARGUMENTS: 
@@ -33,16 +35,32 @@ def get_best_angular_velocity(real_vals, suffix, all_accels_df, thresholds): #ch
     choices = [all_accels_df[f"LSM6DSOX_gyro_{dps}dps_{suffix}"] for dps in [125, 250, 500, 1000]]
     return np.select(cond, choices, default=all_accels_df[f"LSM6DSOX_gyro_2000dps_{suffix}"])
 
+@njit
+def apply_sensor_faults_numba(sensor_data, chance_denominator):
+    chance = 1.0 / chance_denominator
+    change = 0.0
+    if np.random.random() <= chance:
+        change = float(np.random.randint(-65536, 65536))
+    
+    return sensor_data + change
 
 def apply_sensor_faults(sensor_data, rng, chance_denominator = 100000):
-    chance = 1/chance_denominator
-    change = 0
-    if rng.random() <= chance:
-        print("SENSOR FAULT ")
-        change = rng.integers(-65536, 65536) # -(2**16), (2**16)
-        Log.print_info("SENSOR FAULT " + str(change))
-        #TODO: edycja sensor_data
-    return sensor_data + change
+    result = apply_sensor_faults_numba(float(sensor_data), float(chance_denominator))
+    if result != sensor_data:
+        Log.print_info("SENSOR FAULT " + str(result - sensor_data))
+
+    return result
+
+@njit(fastmath=True) 
+def fast_extract_numba(times, x_array, y_array):
+    return np.interp(times, x_array, y_array)
+
+def fast_extract(rp_func, times):
+    x_arr = np.asarray(rp_func.x_array, dtype=np.float64)
+    y_arr = np.asarray(rp_func.y_array, dtype=np.float64)
+    times_arr = np.asarray(times, dtype=np.float64)
+    
+    return fast_extract_numba(times_arr, x_arr, y_arr)
 
 def apply_sensor_dropout(current_flight, frame, rng):
     times = frame.index.values
@@ -82,9 +100,6 @@ def apply_sensor_dropout(current_flight, frame, rng):
 
     return frame
 
-def fast_extract(rp_func, times):
-    return np.interp(times, rp_func.x_array, rp_func.y_array)
-
 def run_single_simulation(i, rocket, environment, heading , rail_length, rng, acceleration_thresholds, angular_velocity_thresholds):
     current_flight = Flight(
             heading=heading,
@@ -94,8 +109,6 @@ def run_single_simulation(i, rocket, environment, heading , rail_length, rng, ac
             )
     dir = os.path.dirname(__file__)
     accel_data = []
-
-    # rocket.motor.thrust.source()
 
     for sensor_tuple in rocket.sensors:
         sensor = sensor_tuple.component
@@ -111,6 +124,10 @@ def run_single_simulation(i, rocket, environment, heading , rail_length, rng, ac
         frame.set_index("Time", inplace=True)
 
         apply_sensor_dropout(current_flight, frame, rng)
+
+        for col in frame.columns:
+            frame[col] = frame[col].apply(lambda val: apply_sensor_faults(val, rng))
+            
         if isinstance(sensor , (Accelerometer, Gyroscope, ScalarSensor, Barometer)):
             accel_data.append({
                     "df": frame,
@@ -122,31 +139,36 @@ def run_single_simulation(i, rocket, environment, heading , rail_length, rng, ac
         all_accels_df.sort_index(inplace=True)
         times_array = all_accels_df.index.values
 
-        real_acc_x = fast_extract(current_flight.ax, times_array)
-        real_acc_y = fast_extract(current_flight.ay, times_array)
-        real_acc_z = fast_extract(current_flight.az, times_array)
+        all_accels_df["Acceleration_X"] = fast_extract(current_flight.ax, times_array)
+        all_accels_df["Acceleration_Y"] = fast_extract(current_flight.ay, times_array)
+        all_accels_df["Acceleration_Z"] = fast_extract(current_flight.az, times_array)
 
-        real_angvel_x = fast_extract(current_flight.w1, times_array)
-        real_angvel_y = fast_extract(current_flight.w2, times_array)
-        real_angvel_z = fast_extract(current_flight.w3, times_array)
+        all_accels_df["Position_X"] = fast_extract(current_flight.x, times_array)
+        all_accels_df["Position_Y"] = fast_extract(current_flight.y, times_array)
+        all_accels_df["Position_Z"] = fast_extract(current_flight.z, times_array)
 
-        all_accels_df["Best_Acc_X"] = get_best_acceleration(real_acc_x, "X", all_accels_df, acceleration_thresholds)
-        all_accels_df["Best_Acc_Y"] = get_best_acceleration(real_acc_y, "Y", all_accels_df, acceleration_thresholds)
-        all_accels_df["Best_Acc_Z"] = get_best_acceleration(real_acc_z, "Z", all_accels_df, acceleration_thresholds) 
+        all_accels_df["Thrust"] = fast_extract(rocket.motor.thrust, times_array)
+        all_accels_df["Mass"] = fast_extract(rocket.total_mass, times_array)
+
+        all_accels_df["Best_Acc_X"] = get_best_acceleration(all_accels_df["Acceleration_X"], "X", all_accels_df, acceleration_thresholds)
+        all_accels_df["Best_Acc_Y"] = get_best_acceleration(all_accels_df["Acceleration_Y"], "Y", all_accels_df, acceleration_thresholds)
+        all_accels_df["Best_Acc_Z"] = get_best_acceleration(all_accels_df["Acceleration_Z"], "Z", all_accels_df, acceleration_thresholds) 
         
-        all_accels_df["Best_AngVel_X"] = get_best_angular_velocity(real_angvel_x, "X", all_accels_df, angular_velocity_thresholds)
-        all_accels_df["Best_AngVel_Y"] = get_best_angular_velocity(real_angvel_y, "Y", all_accels_df, angular_velocity_thresholds)
-        all_accels_df["Best_AngVel_Z"] = get_best_angular_velocity(real_angvel_z, "Z", all_accels_df, angular_velocity_thresholds)
+        real_w1, real_w2, real_w3 = fast_extract(current_flight.w1, times_array), fast_extract(current_flight.w2, times_array), fast_extract(current_flight.w3, times_array)
+        all_accels_df["Best_AngVel_X"] = get_best_angular_velocity(real_w1, "X", all_accels_df, angular_velocity_thresholds)
+        all_accels_df["Best_AngVel_Y"] = get_best_angular_velocity(real_w2, "Y", all_accels_df, angular_velocity_thresholds)
+        all_accels_df["Best_AngVel_Z"] = get_best_angular_velocity(real_w3, "Z", all_accels_df, angular_velocity_thresholds)
 
         scalar_cols = [c for c in all_accels_df.columns if c.endswith("_Value")]
-        all_accels_df["Thrust"] = [rocket.motor.thrust(t) for t in times_array]
-
-        final_cols = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z", 
-                      "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z", "Thrust"] + scalar_cols
         
-
-        # final_cols = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z", 
-        #               "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z"] + scalar_cols
+        final_cols = [
+            "Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z", 
+            "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z"
+        ] + scalar_cols + [
+            "Thrust", "Mass", 
+            "Position_X", "Position_Y", "Position_Z",
+            "Acceleration_X", "Acceleration_Y", "Acceleration_Z"
+        ]
         
         final_df = all_accels_df[final_cols].copy()
         final_df.ffill(inplace=True)

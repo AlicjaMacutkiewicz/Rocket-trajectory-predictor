@@ -11,7 +11,9 @@ from rocketpy import Environment, SolidMotor, Rocket, Accelerometer, Gyroscope, 
 from rocketpy.stochastic import StochasticEnvironment, StochasticSolidMotor
 from logger import *
 from single_simulation import run_single_simulation
-import cProfile
+# import cProfile
+import time
+import datetime
 
 
 NUM_GPUS = 0
@@ -312,7 +314,7 @@ def parallel_generator(N, json_path, drag_path, env_base, heading , rail_length,
 
 
 def main():
-
+    start_time = time.perf_counter()
     global TEST_FLAG
     if len(sys.argv) > 1:
         if sys.argv[1] == 'test':
@@ -363,6 +365,10 @@ def main():
                        acceleration_thresholds,
                        angular_velocity_thresholds
                        )
+    end_time = time.perf_counter()
+    total_seconds = end_time - start_time
+    formatted_time = str(datetime.timedelta(seconds=int(total_seconds)))
+    print(formatted_time)
 
 if __name__=="__main__":
     main()

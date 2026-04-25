@@ -1,10 +1,7 @@
 import cdsapi
-import rocketpy 
-import scipy
 import xarray as xr
 import numpy as np
-import pandas as pd
-from rocketpy import Flight , Accelerometer, Gyroscope, Environment, StochasticEnvironment
+from rocketpy import Environment
 import os
 import xarray as xr
 from scipy.interpolate import interp1d
