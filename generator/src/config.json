@@ -23,5 +23,8 @@
     "thresholds": {
         "acceleration": [19.613, 39.227, 78.453],
         "angular_velocity": [125, 250, 500, 1000]
+    },
+    "generator": {
+        "flight_simulation_amount_for_scenario": 10
     }
 }

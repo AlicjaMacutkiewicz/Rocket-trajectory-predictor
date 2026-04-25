@@ -351,7 +351,7 @@ def main():
     acceleration_thresholds = config_data["thresholds"]["acceleration"]
     angular_velocity_thresholds = config_data["thresholds"]["angular_velocity"]
     
-    flight_simulation_amount_for_scenario = 10
+    flight_simulation_amount_for_scenario = config_data["generator"]["flight_simulation_amount_for_scenario"]
     date  = datetime.datetime(2005 , 12 , 10)
     env_base = get_enviroment_from_date(environment_data, date, "ENV_DATA_"+date.strftime("%Y-%m-%d_%H:%M"))
     parallel_generator(flight_simulation_amount_for_scenario,

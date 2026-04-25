@@ -7,3 +7,4 @@ xarray
 scipy
 cdsapi
 statsmodels
+numba
