@@ -277,12 +277,12 @@ def parallel_generator(N, json_path, drag_path, env_base, heading , rail_length,
     stochastic_motor = init_stochastic_motor(base_motor,stochastic_motor_params)
 
     def worker(i):
-        if hasattr(cp, 'cuda'):
-            gpu_count = cp.cuda.runtime.getDeviceCount()
-            if gpu_count > 0:
-                gpu_id = i % gpu_count
-                os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-                cp.cuda.Device(gpu_id).use()
+     #   if hasattr(cp, 'cuda'):
+     #      gpu_count = cp.cuda.runtime.getDeviceCount()
+     #       if gpu_count > 0:
+      #          gpu_id = i % gpu_count
+       #         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+        #        cp.cuda.Device(gpu_id).use()
 
         #profiling
         # profiler = cProfile.Profile()
