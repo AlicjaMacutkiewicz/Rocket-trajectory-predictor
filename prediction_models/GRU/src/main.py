@@ -6,6 +6,30 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 from GRU_model import GRU
 
+# Check for current best hardware options: 
+#   mps - apple gpu, 
+#   cuda - nvidia gpu, 
+#   xpu - intel gpu
+#   cpu - other/cpu options
+
+def get_best_device():
+    if torch.cuda.is_available():
+        dev = torch.device("cuda")
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        dev = torch.device("mps")
+    else:
+        try:
+            import intel_extension_for_pytorch
+            if torch.xpu.is_available():
+                dev = torch.device("xpu")
+            else:
+                dev = torch.device("cpu")
+        except ImportError:
+            dev = torch.device("cpu")
+    
+    print(f"running on {dev}")
+    return dev
+
 # Load data from num_of_flights parquet files into a single numpy array
 # containing X, Y, Z acceleration data
 
@@ -103,10 +127,10 @@ def train_model(model, X_train, y_train, X_test, y_test, loss, optimizer,
 
             # X_batch: (batch_size, seq_len, 3)
             # where 3 = [Acc_x, Acc_y, Acc_z]
-            X_batch = X_train[i:i+batch_size] # batch input
+            X_batch = X_train[i:i+batch_size].to(device) # batch input
             
             # y_batch shape: (batch_size, pred_len, 3)
-            y_batch = y_train[i:i+batch_size] # correct future values to be predicted (targets)
+            y_batch = y_train[i:i+batch_size].to(device) # correct future values to be predicted (targets)
 
             # pass input sequence through GRU to get predictions for each time step
             # outputs shape: (batch_size, seq_len, 3)
@@ -149,8 +173,8 @@ def evaluate_model(model, X_test, y_test, loss, batch_size=64, pred_len=3):
         # iterate over the test dataset in smaller batches    
         for i in range(0, len(X_test), batch_size):
             # select one batch of test inputs
-            X_batch = X_test[i:i+batch_size]
-            y_batch = y_test[i:i+batch_size]
+            X_batch = X_test[i:i+batch_size].to(device)
+            y_batch = y_test[i:i+batch_size].to(device)
 
             # pass input sequence through GRU to get predictions for each time step
             outputs, _ = model(X_batch)
@@ -175,7 +199,7 @@ def plot_prediction(model, X_test, y_test, pred_len, sample_idx=0, axis=0):
     
         # select a single test sample (batch size = 1)
         # input_seq shape = (1, seq_len, 3)
-        input_seq = X_test[sample_idx:sample_idx+1]
+        input_seq = X_test[sample_idx:sample_idx+1].to(device)
 
         # select corresponding correct future values to be predicted (targets)
         # target shape: (pred_len, 3)
@@ -188,8 +212,8 @@ def plot_prediction(model, X_test, y_test, pred_len, sample_idx=0, axis=0):
 
         # extract only the last pred_len time steps from the sequence
         # prediction shape: (pred_len, 3)
-        prediction = output[0, -pred_len:, :].numpy()
-    
+        prediction = output[0, -pred_len:, :].cpu().numpy()    
+
         # define time axes for past (input) and future (prediction)
         seq_len =  input_seq.shape[1] # length of input sequence
 
@@ -250,12 +274,13 @@ X_train, y_train = make_sequences(train_flights, seq_len, pred_len)
 X_test, y_test = make_sequences(test_flights, seq_len, pred_len)
 
 print("data preprocessing done")
-
-model = GRU(input_size=3, hidden_size=64, output_size=3,  num_layers=2)
+device = get_best_device()
+model = GRU(input_size=3, hidden_size=64, output_size=3,  num_layers=2).to(device)
 optimizer = optim.Adam(model.parameters(), lr=0.0005)
 
+#adjusted the arguments passed to the function to process them properly
 train_losses, test_losses = train_model(model, X_train, y_train, X_test, y_test, loss, optimizer,
-                           batch_size, training_rounds, pred_len)
+                           batch_size = batch_size, training_rounds = training_rounds, pred_len = pred_len)
 
 plot_losses(train_losses, test_losses)
 
