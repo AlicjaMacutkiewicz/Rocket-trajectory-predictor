@@ -239,7 +239,11 @@ def plot_prediction(model, X_test, y_test, pred_len, sample_idx=0, axis=0):
         plt.title(f"Predykcja Przyspieszenia {axes_labels[axis]} (Próbka {sample_idx})")
         plt.legend()
         plt.grid(True, alpha=0.3)
-        plt.show()
+ #       plt.show()
+        filename = f"prediction_sample_{sample_idx}.png"
+        plt.savefig(filename, bbox_inches='tight')
+        plt.close() # Free up memory
+        print(f"Saved prediction plot to {filename}")
 
 def plot_losses(train_losses, test_losses):
     plt.figure(figsize=(10, 5))
@@ -250,7 +254,10 @@ def plot_losses(train_losses, test_losses):
     plt.title("Model Progress")
     plt.legend()
     plt.grid(True, alpha=0.3)
-    plt.show()
+   # plt.show()
+    plt.savefig("loss_progress.png", bbox_inches='tight')
+    plt.close()
+    print("Saved loss plot to loss_progress.png")
 
 
 batch_size = 64
