@@ -24,12 +24,12 @@ def rp_solution_arr_str(data):
     return msg
 
 #helper function for 'run_single_simulation'
-def get_best_acceleration(real_vals, suffix, all_accels_df, thresholds): #change when eagle lands
+def get_best_acceleration(real_vals, suffix, all_accels_df, thresholds):
     cond = [np.abs(real_vals) < t for t in thresholds]
     choices = [all_accels_df[f"LSM6DSOX_acc_{g}g_{suffix}"] for g in [2, 4, 8]]
     return np.select(cond, choices, default=all_accels_df[f"LSM6DSOX_acc_16g_{suffix}"])
 
-def get_best_angular_velocity(real_vals, suffix, all_accels_df, thresholds): #change when eagle lands
+def get_best_angular_velocity(real_vals, suffix, all_accels_df, thresholds):
     real_vals_dps = np.degrees(real_vals)
     cond = [np.abs(real_vals_dps) < t for t in thresholds]
     choices = [all_accels_df[f"LSM6DSOX_gyro_{dps}dps_{suffix}"] for dps in [125, 250, 500, 1000]]
@@ -100,7 +100,7 @@ def apply_sensor_dropout(current_flight, frame, rng):
 
     return frame
 
-def run_single_simulation(i,j, rocket, environment, heading , rail_length, rng, acceleration_thresholds, angular_velocity_thresholds):
+def run_single_simulation(current_date, rocket, environment, heading , rail_length, rng, acceleration_thresholds, angular_velocity_thresholds):
     current_flight = Flight(
             heading=heading,
             environment=environment,
@@ -173,7 +173,7 @@ def run_single_simulation(i,j, rocket, environment, heading , rail_length, rng, 
         final_df = all_accels_df[final_cols].copy()
         final_df.ffill(inplace=True)
         final_df.bfill(inplace=True)
-        # final_df.to_csv(os.path.join(dir, f"output/flight_{i}_test_sensors.csv"), index_label="Time")
-        final_df['flight_id'] = i 
-        Log.print_info(f"Pakowanko... {j}")
-        final_df.to_parquet(f"output/flight_{j}{i}.parquet", index=True)
+        final_df.to_csv(os.path.join(dir, f"output/flight_{current_date}_test_sensors.csv"), index_label="Time")
+        final_df['flight_id'] = current_date.date() 
+        Log.print_info(f"Pakowanko... {current_date.date()}")
+        final_df.to_parquet(f"output/flight_{current_date.date()}.parquet", index=True)

@@ -1,5 +1,7 @@
+import calendar
 import datetime
 import json
+import random
 import sys
 from enviroment_api import * 
 from custom_sensors.thermometer import *
@@ -14,6 +16,7 @@ from single_simulation import run_single_simulation
 # import cProfile
 import time
 import datetime
+import multiprocess as mp # Add this to your imports at the top
 
 
 NUM_GPUS = 0
@@ -267,9 +270,43 @@ def init_paths_from_json(main_paths_file):
         dataset = json.load(file)
     return dataset
 
+def prefetch_weather_environments(date_table, environment_data):
+    Log.print_info("Pre-fetching weather data from Copernicus API...")
+    prefetched_envs = {}
     
-def parallel_generator(N, json_path, drag_path, env_base, heading , rail_length,sensor_list,thrust_path,stochastic_motor_params, acceleration_thresholds, angular_velocity_thresholds,j):
-    indices = range(N) 
+    for current_date in tqdm.tqdm(date_table, desc="fetching weather data"):
+        env_name = f"ENV_DATA_{current_date.strftime('%Y-%m-%d')}"
+        
+        env_base = None
+        max_retries = 10
+        
+        for attempt in range(max_retries):
+            try:
+                env_base = get_enviroment_from_date(environment_data, current_date, env_name)
+                break
+                
+            except Exception as e:
+                error_msg = str(e)
+                if "temporarily limited" in error_msg or "400 Client Error" in error_msg:
+                    wait_time = random.uniform(5, 15) * (attempt + 1)
+                    print(f"\nAPI queue full. waiting {wait_time:.1f}s before retry {attempt+1}/{max_retries}...")
+                    time.sleep(wait_time)
+                else:
+                    raise 
+                    
+        if env_base is None:
+            raise RuntimeError(f"failed to fetch weather data for {current_date} after {max_retries} attempts.")
+            
+        prefetched_envs[current_date] = env_base
+        time.sleep(2)
+        
+    Log.print_info("all weather data pre-fetched")
+    return prefetched_envs
+    
+def parallel_generator(amount_in_parrallel, date_table, yearly_files, json_path, drag_path, environment_data, heading , rail_length,sensor_list,thrust_path,stochastic_motor_params, acceleration_thresholds, angular_velocity_thresholds):
+    N = len(date_table)
+    indices = range(N)
+
     with open(json_path, 'r', encoding='utf-8') as file:
         model_data = json.load(file)
 
@@ -277,52 +314,80 @@ def parallel_generator(N, json_path, drag_path, env_base, heading , rail_length,
     stochastic_motor = init_stochastic_motor(base_motor,stochastic_motor_params)
 
     def worker(i):
-        if hasattr(cp, 'cuda'):
-            gpu_count = cp.cuda.runtime.getDeviceCount()
-            if gpu_count > 0:
-                gpu_id = i % gpu_count
-                os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-                cp.cuda.Device(gpu_id).use()
+        current_date = date_table[i]
+        try:
+            if hasattr(cp, 'cuda'):
+                gpu_count = cp.cuda.runtime.getDeviceCount()
+                if gpu_count > 0:
+                    gpu_id = i % gpu_count
+                    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+                    cp.cuda.Device(gpu_id).use()
 
-        #profiling
-        # profiler = cProfile.Profile()
-        # profiler.enable()
+            #profiling
+            # profiler = cProfile.Profile()
+            # profiler.enable()
 
-        np.random.seed(i)
-           
-        sampled_motor = stochastic_motor.create_object()
-        stochastic_motor._set_stochastic(seed = i)
+            np.random.seed(i)
+            
+            sampled_motor = stochastic_motor.create_object()
+            stochastic_motor._set_stochastic(seed = i)
 
-        rocket = init_rocket_from_JSON(model_data,drag_path,sampled_motor)
-        rocket = add_sensors_to_rocket(rocket, sensor_list)
+            rocket = init_rocket_from_JSON(model_data,drag_path,sampled_motor)
+            rocket = add_sensors_to_rocket(rocket, sensor_list)
 
-        st_environment = StochasticEnvironment(environment=env_base)
-        environment = st_environment.create_object()
-        rng = np.random.default_rng(i)
+            sl_file = yearly_files[current_date.year]["single"]
+            pl_file = yearly_files[current_date.year]["levels"]
+            env_base = get_enviroment_from_batched_file(environment_data, current_date, sl_file, pl_file)
 
-        result =  run_single_simulation(i,j, rocket, environment, heading, rail_length, rng, acceleration_thresholds, angular_velocity_thresholds)
+            st_environment = StochasticEnvironment(environment=env_base)
+            environment = st_environment.create_object()
+            rng = np.random.default_rng(i)
 
+            result =  run_single_simulation(current_date,rocket, environment, heading, rail_length, rng, acceleration_thresholds, angular_velocity_thresholds)
+            return current_date
+        
+        except Exception as e:
+            Log.print_error(f"simulation failed for {current_date}: {e}")
+            return None
         #profiling
         # profiler.disable()
         # profiler.dump_stats(f"output/worker_b{i}_profile.prof") 
         
-        return result
-    
-    with ProcessPool() as pool:
+    with ProcessPool(nodes=amount_in_parrallel) as pool:
         results = list(tqdm.tqdm(pool.uimap(worker, indices), total = N, desc = "Siupi dupi Grzesiu dawaj"))
     return results
-
 
 def main():
     start_time = time.perf_counter()
     global TEST_FLAG
-    if len(sys.argv) > 1:
-        if sys.argv[1] == 'test':
-            TEST_FLAG = True
-            Log.print_warning("RUNNING IN TEST MODE")
+    TEST_FLAG = False
+    
+    year_start = 1940
+    year_end = 1941
+    
+    args = sys.argv[1:]
+    
+    if 'test' in args:
+        TEST_FLAG = True
+        Log.print_warning("running in test mode")
+        args.remove('test')
+    try:
+        if len(args) >= 2:
+            year_start = int(args[0])
+            year_end = int(args[1])
+        elif len(args) == 1:
+            year_start = int(args[0])
+            year_end = int(args[0])
+        else:
+            print("no specified dates")
+    except ValueError:
+        print("no year arguments")
+        
+    print(f"generating simulations from {year_start} to {year_end}...")
     
     paths = init_paths_from_json("paths.json")
     environment_data = get_environment_data_from_JSON(paths["config_path"])
+    
     sensor_list = [] 
     sensor_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM6DSOX_acc_2g"))
     sensor_list.append(init_accelerometer_from_JSON(paths["sensors_path"]["accelerometer"],"LSM6DSOX_acc_4g"))
@@ -351,32 +416,55 @@ def main():
     acceleration_thresholds = config_data["thresholds"]["acceleration"]
     angular_velocity_thresholds = config_data["thresholds"]["angular_velocity"]
     
-    flight_simulation_amount_for_scenario = config_data["generator"]["flight_simulation_amount_for_scenario"]
+    date_table = []
+    for year in range(year_start, year_end + 1):
+        for month in range(1, 13):
+            _, num_days = calendar.monthrange(year, month)
+            random_days = random.sample(range(1, num_days + 1), 2)
+            
+            for day in random_days:
+                date_table.append(datetime.datetime(year, month, day, 12, 0, 0))
+    
+    date_table.sort()
+    
+    yearly_files = {}
+    for year in range(year_start, year_end + 1):
+        sl_file, pl_file = download_yearly_weather(year)
+        yearly_files[year] = {"single": sl_file, "levels": pl_file}
+    amount_in_parrallel = 12
 
-    dates = []
-    for i in range (10):
-        dates.append(datetime.datetime(2015-i , 12-i , 11-i))
+    results = parallel_generator(
+        amount_in_parrallel = amount_in_parrallel,
+        date_table=date_table,
+        yearly_files=yearly_files,
+        json_path=paths["source_model_path"]["parameters"],
+        drag_path=paths["source_model_path"]["drag_curve"],
+        environment_data=environment_data,
+        heading=heading,
+        rail_length=rail_length,
+        sensor_list=sensor_list,
+        thrust_path=paths["source_model_path"]["thrust_source"],
+        stochastic_motor_params=stochastic_motor_params,
+        acceleration_thresholds=acceleration_thresholds,
+        angular_velocity_thresholds=angular_velocity_thresholds,
+    )
 
-    j = 1
-    for date in dates:
-        env_base = get_enviroment_from_date(environment_data, date, "ENV_DATA_"+date.strftime("%Y-%m-%d_%H:%M"))
-        parallel_generator(flight_simulation_amount_for_scenario,
-                        paths["source_model_path"]["parameters"],
-                        paths["source_model_path"]["drag_curve"],
-                        env_base,heading,
-                        rail_length,
-                        sensor_list,
-                        paths["source_model_path"]["thrust_source"],
-                        stochastic_motor_params,
-                        acceleration_thresholds,
-                        angular_velocity_thresholds,
-                        j
-                        )
-        j+=1
+    successful_dates = [d for d in results if d is not None]
+    
+    log_file = "output/generated_flights.txt"
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(f"\n--- batch Run: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+        f.write(f"total attempted: {len(date_table)} | successful: {len(successful_dates)}\n")
+        for date in successful_dates:
+            f.write(f"{date.strftime('%Y-%m-%d')}\n")
+            
+    print(f"Logged {len(successful_dates)} successful simulation dates to {log_file}")
+
     end_time = time.perf_counter()
     total_seconds = end_time - start_time
     formatted_time = str(datetime.timedelta(seconds=int(total_seconds)))
-    print(formatted_time)
+    print(f"total processing time: {formatted_time}")
 
 if __name__=="__main__":
+    mp.set_start_method('spawn', force=True)
     main()

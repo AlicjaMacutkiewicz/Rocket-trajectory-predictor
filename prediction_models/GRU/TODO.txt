@@ -50,3 +50,12 @@ GRU TODO:
     > wprowadzić trening tzw. sequence-to-sequence, czyli losować sobie moment gdy sieć jest odcinana od danych i ma przewidywać
     > nakarmić sieć realnymi danymi z czujników
     > porównać wyniki poprzednich wersji do aktualnej (średnia wartość f. straty, jakiś wykresik)
+
+
+    DODATKOWO:
+    > dodać opcje zapisu stanu modelu
+    > dodać opcje wyboru dat i doszkolenia modelu na tej podstawie (najlepiej z poziomu terminala)
+        (np z danego roku - wywolanie z argumenem np "2023")
+    > dodać zapis do pliku typu stan_uczenia.txt które daty dokładnie zostały już wykorzystane
+    > dodać plotowanie aktualnego wyniku na bieżąco (i zapis do png czy coś)
+    
