@@ -10,19 +10,6 @@ from logger import *
 
 from numba import njit, prange
 
-# @BRIEF
-# cretes string based on rp.solution_array, without np.float type signature
-# @ARGUMENTS: 
-#       data -> rp.solution_array instance
-# @RETURN
-#       msg -> string representation of given array
-def rp_solution_arr_str(data):
-    msg = '['
-    for itr in data:
-        msg += f"{str(itr)},"
-    msg += ']'
-    return msg
-
 #helper function for 'run_single_simulation'
 def get_best_acceleration(real_vals, suffix, all_accels_df, thresholds):
     cond = [np.abs(real_vals) < t for t in thresholds]
@@ -83,13 +70,13 @@ def apply_sensor_dropout(current_flight, frame, rng):
     wind_v = np.array([current_flight.env.wind_velocity_y(alt) for alt in alts])
     wind_speeds = np.sqrt(wind_u**2 + wind_v**2)
 
-    drop_rates = np.clip(0.001 + 0.002 * wind_speeds + (g_forces - 4) * 0.01, 0, 1)
+    drop_rates = np.clip(0.005 + 0.004 * wind_speeds + (g_forces - 4) * 0.04, 0, 1)
     random_rolls = rng.random(size=iterations)
     
     for k in range(iterations):
         if random_rolls[k] < drop_rates[k]:
             i = random_indices[k]
-            dropout_interval = rng.integers(50, 500)
+            dropout_interval = rng.integers(50, 750)
             
             end_idx = min(i + dropout_interval, len(times))
             raw_data[i:end_idx, :] = np.nan
@@ -100,7 +87,7 @@ def apply_sensor_dropout(current_flight, frame, rng):
 
     return frame
 
-def run_single_simulation(current_date, rocket, environment, heading , rail_length, rng, acceleration_thresholds, angular_velocity_thresholds):
+def run_single_simulation(current_date, rocket, environment, heading , rail_length, rng, acceleration_thresholds, angular_velocity_thresholds, i):
     current_flight = Flight(
             heading=heading,
             environment=environment,
@@ -173,7 +160,7 @@ def run_single_simulation(current_date, rocket, environment, heading , rail_leng
         final_df = all_accels_df[final_cols].copy()
         final_df.ffill(inplace=True)
         final_df.bfill(inplace=True)
-        final_df.to_csv(os.path.join(dir, f"output/flight_{current_date}_test_sensors.csv"), index_label="Time")
+        # final_df.to_csv(os.path.join(dir, f"output/flight_{current_date}_test_sensors.csv"), index_label="Time")
         final_df['flight_id'] = current_date.date() 
         Log.print_info(f"Pakowanko... {current_date.date()}")
-        final_df.to_parquet(f"output/flight_{current_date.date()}.parquet", index=True)
+        final_df.to_parquet(f"output/flight_{i}.parquet", index=True)

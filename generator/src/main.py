@@ -123,13 +123,13 @@ def init_stochastic_motor(base_motor, stochastic_motor_params):
 
     stochastic_motor = StochasticSolidMotor(
         solid_motor = base_motor,
-        grain_density = grain_density_param * base_motor.grain_density,
-        grain_outer_radius = grain_outer_radius_param* base_motor.grain_outer_radius,
-        grain_initial_inner_radius = grain_initial_inner_radius_param* base_motor.grain_initial_inner_radius,
-        grain_initial_height = grain_initial_height_param* base_motor.grain_initial_height,
-        nozzle_radius = nozzle_radius_param * base_motor.nozzle_radius,
-        throat_radius = throat_radius_param * base_motor.throat_radius,
-        total_impulse = total_impulse_param * base_motor.total_impulse
+        grain_density = (grain_density_param * base_motor.grain_density,"uniform"),
+        grain_outer_radius = (grain_outer_radius_param* base_motor.grain_outer_radius,"uniform"),
+        grain_initial_inner_radius = (grain_initial_inner_radius_param* base_motor.grain_initial_inner_radius,"uniform"),
+        grain_initial_height = (grain_initial_height_param* base_motor.grain_initial_height,"uniform"),
+        nozzle_radius = (nozzle_radius_param * base_motor.nozzle_radius,"uniform"),
+        throat_radius = (throat_radius_param * base_motor.throat_radius,"uniform"),
+        total_impulse = (total_impulse_param * base_motor.total_impulse,"uniform")
     )
     return stochastic_motor
 
@@ -226,7 +226,6 @@ def init_thermometer_from_JSON(path_to_file, name):
     )
     return thermometer
 
-
 def init_barometer_from_JSON(path_to_file, name):
     with open(path_to_file, 'r', encoding = 'utf-8')as file:
         data = json.load(file)
@@ -271,7 +270,7 @@ def init_paths_from_json(main_paths_file):
     return dataset
 
 def prefetch_weather_environments(date_table, environment_data):
-    Log.print_info("Pre-fetching weather data from Copernicus API...")
+    Log.print_info("pre-fetching weather data from api...")
     prefetched_envs = {}
     
     for current_date in tqdm.tqdm(date_table, desc="fetching weather data"):
@@ -343,7 +342,7 @@ def parallel_generator(amount_in_parrallel, date_table, yearly_files, json_path,
             environment = st_environment.create_object()
             rng = np.random.default_rng(i)
 
-            result =  run_single_simulation(current_date,rocket, environment, heading, rail_length, rng, acceleration_thresholds, angular_velocity_thresholds)
+            result =  run_single_simulation(current_date,rocket, environment, heading, rail_length, rng, acceleration_thresholds, angular_velocity_thresholds, i)
             return current_date
         
         except Exception as e:
