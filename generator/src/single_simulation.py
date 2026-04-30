@@ -163,4 +163,4 @@ def run_single_simulation(current_date, rocket, environment, heading , rail_leng
         # final_df.to_csv(os.path.join(dir, f"output/flight_{current_date}_test_sensors.csv"), index_label="Time")
         final_df['flight_id'] = current_date.date() 
         Log.print_info(f"Pakowanko... {current_date.date()}")
-        final_df.to_parquet(f"output/flight_{i}.parquet", index=True)
+        final_df.to_parquet(f"output/flight_{current_date.date()}.parquet", index=True)
