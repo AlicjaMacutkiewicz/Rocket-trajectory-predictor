@@ -6,4 +6,5 @@ Do zrobienia:
 # 2. dodać quasi losowy wybór dat co ok. 2 tygodnie
 # 3. podkręcić błędy czujników - zakres i częstotliwość
 # 4. sprawdzić lekko większe odchylenia w pracy silnika
- 5. ponownie odpalić testy statystyczne
+# 5. ponownie odpalić testy statystyczne
+

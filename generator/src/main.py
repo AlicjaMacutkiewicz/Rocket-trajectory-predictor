@@ -123,13 +123,13 @@ def init_stochastic_motor(base_motor, stochastic_motor_params):
 
     stochastic_motor = StochasticSolidMotor(
         solid_motor = base_motor,
-        grain_density = (grain_density_param * base_motor.grain_density,"uniform"),
-        grain_outer_radius = (grain_outer_radius_param* base_motor.grain_outer_radius,"uniform"),
-        grain_initial_inner_radius = (grain_initial_inner_radius_param* base_motor.grain_initial_inner_radius,"uniform"),
-        grain_initial_height = (grain_initial_height_param* base_motor.grain_initial_height,"uniform"),
-        nozzle_radius = (nozzle_radius_param * base_motor.nozzle_radius,"uniform"),
-        throat_radius = (throat_radius_param * base_motor.throat_radius,"uniform"),
-        total_impulse = (total_impulse_param * base_motor.total_impulse,"uniform")
+        grain_density = (base_motor.grain_density, 1.5 * abs(grain_density_param * base_motor.grain_density), "normal"),
+        grain_outer_radius = (base_motor.grain_outer_radius, 1.5 * abs(grain_outer_radius_param * base_motor.grain_outer_radius), "normal"),
+        grain_initial_inner_radius = (base_motor.grain_initial_inner_radius, 1.5 * abs(grain_initial_inner_radius_param * base_motor.grain_initial_inner_radius), "normal"),
+        grain_initial_height = (base_motor.grain_initial_height, 1.5 * abs(grain_initial_height_param * base_motor.grain_initial_height), "normal"),
+        nozzle_radius = (base_motor.nozzle_radius, 1.5 * abs(nozzle_radius_param * base_motor.nozzle_radius), "normal"),
+        throat_radius = (base_motor.throat_radius, 1.5 * abs(throat_radius_param * base_motor.throat_radius), "normal"),
+        total_impulse = (base_motor.total_impulse, 1.5 * abs(total_impulse_param * base_motor.total_impulse), "normal")
     )
     return stochastic_motor
 
