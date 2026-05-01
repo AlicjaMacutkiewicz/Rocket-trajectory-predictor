@@ -18,9 +18,11 @@ def euler_t(start_position, start_mass, angle, time, thrust):
     position = start_position
     velocity = np.array([0, 0, 0])
     acceleration = np.array([0, 0, 0])
+
+    times = np.array(list(thrust.keys()))
+    values = np.array(list(thrust.values()))
+
     while t < time:
-        times = np.array(list(thrust.keys()))
-        values = np.array(list(thrust.values()))
 
         current_thrust = 0
         if t < times[-1]:
