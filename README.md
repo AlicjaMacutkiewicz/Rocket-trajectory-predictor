@@ -69,8 +69,9 @@ In classical telemetry, losing the signal results in losing all knowledge of the
 **Project Team**: Alicja Macutkiewicz, Weronika Marszalik, Paweł Leczkowski, Wiktor Ludwichowski, Emilia Łukasiuk
 
 ---
-`Polish version`
 ---
+<details>
+<summary><b> Polish Version (click here)</b></summary>
 
 # Rocket Flight Prediction System ("El-Thom-Bibimbap")
 **System predykcji toru lotu dla telemetrii platform suborbitalnych**
@@ -140,3 +141,5 @@ W klasycznej telemetrii utrata sygnału oznacza utratę wiedzy o pozycji obiektu
 
 ---
 **Zespół projektowy**: Alicja Macutkiewicz, Weronika Marszalik, Paweł Leczkowski, Wiktor Ludwichowski, Emilia Łukasiuk
+
+</details>
