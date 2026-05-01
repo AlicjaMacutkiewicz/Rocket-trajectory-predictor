@@ -23,7 +23,6 @@ def euler_t(start_position, start_mass, angle, time, thrust):
     values = np.array(list(thrust.values()))
 
     while t < time:
-
         current_thrust = 0
         if t < times[-1]:
             current_thrust = np.interp(t, times, values)
