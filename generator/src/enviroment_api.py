@@ -1,4 +1,5 @@
 import json
+import random
 import cdsapi
 import xarray as xr
 import numpy as np
@@ -157,6 +158,9 @@ def download_yearly_weather(year, longitude, latitude, path="../../source_model/
     longitude_min = longitude - 0.13
     latitude_max =  latitude + 0.12
     latitude_min =  latitude - 0.13
+
+    random_hour = f"{random.randint(0, 23):02d}:00"
+
     if not os.path.exists(target_single):
         Log.print_info(f"Queueing API request for {year} SINGLE levels (This will take a minute or two...)")
         dataset_sl = "reanalysis-era5-single-levels"
@@ -166,7 +170,7 @@ def download_yearly_weather(year, longitude, latitude, path="../../source_model/
             "year": [str(year)],
             "month": months,
             "day": days,
-            "time": ["12:00"],
+            "time": [random_hour],  # fixed to have random hour each year
             "data_format": "netcdf4",
             "download_format": "unarchived",
             "area": [latitude_max, longitude_min, latitude_min, longitude_max ]
@@ -182,7 +186,7 @@ def download_yearly_weather(year, longitude, latitude, path="../../source_model/
             "year": [str(year)],
             "month": months,
             "day": days,
-            "time": ["12:00"],
+            "time": [random_hour], # fixed to have random hour each year
             "pressure_level": [
                 "1", "2", "3", "5", "7", "10", "20", "30", "50", "70", "100", "125",
                 "150", "175", "200", "225", "250", "300", "350", "400", "450", "500",
