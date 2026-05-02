@@ -117,3 +117,8 @@ source_model/ERA5_weather/
 
 #data to test the models
 demo_flight_data/
+
+testing_data/
+training_data/
+source_data/
+generated_flights.txt
