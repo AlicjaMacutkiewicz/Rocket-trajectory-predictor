@@ -11,20 +11,20 @@ def create_vecm(data, lag, r):
     model = VECM(data, k_ar_diff=lag, coint_rank=r)
     return model
 
+
 def train_vecm(model):
     return model.fit()
+
 
 def save_vecm(model, lag, r):
     with open("model.pkl", "wb") as f:
         pickle.dump(model, f)
 
-    meta = {
-        "lag": int(lag),
-        "rank": int(r)
-    }
+    meta = {"lag": int(lag), "rank": int(r)}
 
     with open("meta.json", "w") as f:
         json.dump(meta, f)
+
 
 def test_vecm(fitted_model, test_data, n):
     prediction = fitted_model.predict(steps=n)
@@ -38,8 +38,8 @@ def test_vecm(fitted_model, test_data, n):
         prediction_i = prediction[:, i]
         test_i = test[:, i]
 
-        #data = [test_i, prediction_i]
-        #stat, p, dof, expected = chi2_contingency(data)
+        # data = [test_i, prediction_i]
+        # stat, p, dof, expected = chi2_contingency(data)
 
         print(types[i])
         mae = np.mean(np.abs(test_i - prediction_i))
@@ -55,11 +55,7 @@ def test_vecm(fitted_model, test_data, n):
         print(f"MAE: {mae:.4f}")
         print(f"MSE: {mse:.4f}")
 
-        results.append({
-            "column": types[i],
-            "MAE": mae,
-            "MSE": mse
-        })
+        results.append({"column": types[i], "MAE": mae, "MSE": mse})
 
         x = np.arange(1, prediction_i.size + 1)
         plt.plot(x, prediction_i, label="Prediction")

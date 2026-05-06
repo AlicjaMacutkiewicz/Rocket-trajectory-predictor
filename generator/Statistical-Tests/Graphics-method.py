@@ -3,16 +3,30 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
-columns = ['Best_Acc_X', 'Best_Acc_Y', 'Best_Acc_Z', 'Best_AngVel_X',
-       'Best_AngVel_Y', 'Best_AngVel_Z', 'Barometer_Value', 'Sensor_Value',
-       'Thrust', 'Mass', 'Position_X', 'Position_Y', 'Position_Z',
-       'Acceleration_X', 'Acceleration_Y', 'Acceleration_Z']
+columns = [
+    "Best_Acc_X",
+    "Best_Acc_Y",
+    "Best_Acc_Z",
+    "Best_AngVel_X",
+    "Best_AngVel_Y",
+    "Best_AngVel_Z",
+    "Barometer_Value",
+    "Sensor_Value",
+    "Thrust",
+    "Mass",
+    "Position_X",
+    "Position_Y",
+    "Position_Z",
+    "Acceleration_X",
+    "Acceleration_Y",
+    "Acceleration_Z",
+]
 
 N = 12
 tests = []
 
 for i in range(N):
-    a = pd.read_parquet(f'../src/output/flight_{i}.parquet')
+    a = pd.read_parquet(f"../src/output/flight_{i}.parquet")
     tests.append(a)
 
 for col in columns:
