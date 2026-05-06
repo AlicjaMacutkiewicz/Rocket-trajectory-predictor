@@ -7,3 +7,4 @@ rocketpy
 snakeviz
 torch
 xarray
+seaborn

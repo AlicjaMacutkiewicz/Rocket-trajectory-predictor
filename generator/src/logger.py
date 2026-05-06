@@ -1,14 +1,17 @@
+import os
 from enum import IntEnum
 from inspect import stack
-import os
 
 TEST_FLAG = False
+
+
 class LogLevel(IntEnum):
     INFO = 1
     WARNING = 2
     ERROR = 3
 
-class Log(object):
+
+class Log:
     c_current_log_level = LogLevel.INFO
 
     @staticmethod
@@ -26,13 +29,13 @@ class Log(object):
         if not os.path.isfile("output/logs.txt"):
             open("output/logs.txt", "w").close()
         with open("output/logs.txt", "a+") as f:
-            f.write(msg + '\n')
+            f.write(msg + "\n")
 
     @staticmethod
     def print_error(msg):
         info = Log.get_info()
         if Log.c_current_log_level <= LogLevel.ERROR:
-           Log.write_to_file("ERROR: " + info + msg)
+            Log.write_to_file("ERROR: " + info + msg)
 
     @staticmethod
     def print_info(msg):

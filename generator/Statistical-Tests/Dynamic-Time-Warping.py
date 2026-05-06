@@ -2,15 +2,30 @@
 
 # todo znalezc komputer ktory to uciagnie (BARDZO duzo pamieci)
 
-import pandas as pd
 import numpy as np
-from matplotlib import pyplot as plt
+import pandas as pd
 import seaborn as sns
+from matplotlib import pyplot as plt
 
-columns = ['Best_Acc_X', 'Best_Acc_Y', 'Best_Acc_Z', 'Best_AngVel_X',
-       'Best_AngVel_Y', 'Best_AngVel_Z', 'Barometer_Value', 'Sensor_Value',
-       'Thrust', 'Mass', 'Position_X', 'Position_Y', 'Position_Z',
-       'Acceleration_X', 'Acceleration_Y', 'Acceleration_Z']
+columns = [
+    "Best_Acc_X",
+    "Best_Acc_Y",
+    "Best_Acc_Z",
+    "Best_AngVel_X",
+    "Best_AngVel_Y",
+    "Best_AngVel_Z",
+    "Barometer_Value",
+    "Sensor_Value",
+    "Thrust",
+    "Mass",
+    "Position_X",
+    "Position_Y",
+    "Position_Z",
+    "Acceleration_X",
+    "Acceleration_Y",
+    "Acceleration_Z",
+]
+
 
 def dtw_distance(x, y):
     n, m = len(x), len(y)
@@ -21,11 +36,7 @@ def dtw_distance(x, y):
         for j in range(1, m + 1):
             cost = abs(x[i - 1] - y[j - 1])
 
-            dtw[i, j] = cost + min(
-                dtw[i - 1, j],
-                dtw[i, j - 1],
-                dtw[i - 1, j - 1]
-            )
+            dtw[i, j] = cost + min(dtw[i - 1, j], dtw[i, j - 1], dtw[i - 1, j - 1])
 
     return dtw[n, m]
 
@@ -35,8 +46,8 @@ matrix = np.zeros((N, N))
 
 for i in range(N):
     for j in range(N):
-        df1 = pd.read_parquet(f'../src/output/flight_{i}.parquet')
-        df2 = pd.read_parquet(f'../src/output/flight_{j}.parquet')
+        df1 = pd.read_parquet(f"../src/output/flight_{i}.parquet")
+        df2 = pd.read_parquet(f"../src/output/flight_{j}.parquet")
 
         print(i, " ", j)
 
@@ -64,7 +75,7 @@ sns.heatmap(
     fmt=".2f",
     cmap="coolwarm",
     xticklabels=[f"F{i}" for i in range(N)],
-    yticklabels=[f"F{i}" for i in range(N)]
+    yticklabels=[f"F{i}" for i in range(N)],
 )
 
 plt.title("Podobieństwo lotów (Pearson/Spearman correlation)")

@@ -1,5 +1,6 @@
 from rocketpy.sensors import ScalarSensor
 
+
 class Thermometer(ScalarSensor):
     def measure(self, time, **kwargs):
         u = kwargs.get("u")
@@ -12,7 +13,5 @@ class Thermometer(ScalarSensor):
 
     def export_measured_data(self, filename, file_format="csv"):
         self._generic_export_measured_data(
-            filename=filename, 
-            file_format=file_format, 
-            data_labels=("Time (s)", "Temperature (K)")
+            filename=filename, file_format=file_format, data_labels=("Time (s)", "Temperature (K)")
         )
