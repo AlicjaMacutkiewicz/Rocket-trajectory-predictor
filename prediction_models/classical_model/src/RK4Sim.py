@@ -1,6 +1,7 @@
 import numpy as np
 from scipy import constants as const
 
+
 # liczy kolejna pozycje po czasie dt
 def rk4_next(dt, mass, position, angle, velocity, thrust):
     def acceleration(pos):
@@ -24,11 +25,12 @@ def rk4_next(dt, mass, position, angle, velocity, thrust):
     k4_v = k4_a * dt
     k4_x = (velocity + k3_v) * dt
 
-    new_acceleration = (k1_a + 2*k2_a + 2*k3_a + k4_a) / 6
-    new_velocity = velocity + (k1_v + 2*k2_v + 2*k3_v + k4_v) / 6
-    new_position = position + (k1_x + 2*k2_x + 2*k3_x + k4_x) / 6
+    new_acceleration = (k1_a + 2 * k2_a + 2 * k3_a + k4_a) / 6
+    new_velocity = velocity + (k1_v + 2 * k2_v + 2 * k3_v + k4_v) / 6
+    new_position = position + (k1_x + 2 * k2_x + 2 * k3_x + k4_x) / 6
 
     return new_position, new_velocity, new_acceleration
+
 
 # liczy pozycja(t)
 def rk4_t(start_position, rocket_mass, fuel_mass, angle, time, thrust, isp):
@@ -37,6 +39,8 @@ def rk4_t(start_position, rocket_mass, fuel_mass, angle, time, thrust, isp):
     position = start_position
     velocity = np.array([0, 0, 0])
     acceleration = np.array([0, 0, 0])
+
+    trajectory = []
 
     times = np.array(list(thrust.keys()))
     values = np.array(list(thrust.values()))
@@ -50,8 +54,10 @@ def rk4_t(start_position, rocket_mass, fuel_mass, angle, time, thrust, isp):
             fuel_mass -= mdot * dt
             fuel_mass = max(fuel_mass, 0.0)
 
-        position, velocity, acceleration = rk4_next(dt, fuel_mass + rocket_mass, position, angle, velocity, current_thrust)
-
+        position, velocity, acceleration = rk4_next(  # noqa: RUF059
+            dt, fuel_mass + rocket_mass, position, angle, velocity, current_thrust
+        )
+        trajectory.append((t, np.copy(position), np.copy(velocity)))
         t += dt
 
-    return position, velocity, acceleration
+    return trajectory
