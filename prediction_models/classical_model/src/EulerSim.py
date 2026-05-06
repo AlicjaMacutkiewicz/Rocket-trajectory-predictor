@@ -1,26 +1,32 @@
 import numpy as np
-from scipy import constants as const
 
+# liczy kolejna pozycje po czasie dt
+def euler_next(dt, mass, position, angle, velocity, thrust):
+    gravity = np.array([0.0, 0.0, -9.81])
 
-def calculate_non_inertial_forces(velocity, position):
-    earth_angular_velocity = 7.2921159e-5
-    earth_angular_velocity_vector = np.array([0, 0, earth_angular_velocity])
-    coriolis = -2 * np.cross(earth_angular_velocity_vector, velocity)
-    centrifugal = -np.cross(
-        earth_angular_velocity_vector, np.cross(earth_angular_velocity_vector, position)
-    )
-    return coriolis, centrifugal
-
-
-def euler(dt, fuel_mass, rocket_mass, thrust, position, velocity):
-    earth_mass = 5.972e24
-    gravity = -const.G * earth_mass * position / max(np.linalg.norm(position) ** 3, 1e-8)
-    coriolis, centrifugal = calculate_non_inertial_forces(velocity, position)
-
-    mass = rocket_mass + fuel_mass
-    new_acceleration = thrust / max(mass, 1e-8) + gravity + coriolis + centrifugal
+    new_acceleration = (thrust * angle) / max(mass, 1e-8) + gravity
 
     new_velocity = velocity + new_acceleration * dt
     new_position = position + new_velocity * dt
 
     return new_position, new_velocity, new_acceleration
+
+# liczy pozycja(t)
+def euler_t(start_position, start_mass, angle, time, thrust):
+    t = 0
+    dt = 0.02
+    position = start_position
+    velocity = np.array([0, 0, 0])
+    acceleration = np.array([0, 0, 0])
+
+    times = np.array(list(thrust.keys()))
+    values = np.array(list(thrust.values()))
+
+    while t < time:
+        current_thrust = 0
+        if t < times[-1]:
+            current_thrust = np.interp(t, times, values)
+
+        position, velocity, acceleration = euler_next(dt, start_mass, position, angle, velocity, current_thrust)
+        t += dt
+    return position, velocity, acceleration
