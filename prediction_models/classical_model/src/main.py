@@ -1,36 +1,60 @@
+import json
+
 import numpy as np
 from RK4Sim import rk4_t
 
-thrust_data = np.loadtxt(
-    "../../../source_model/R7_SIMLE/R7_OUTPUT/thrust_source.csv", delimiter=","
-)
-thrust_dict = dict(zip(thrust_data[:, 0], thrust_data[:, 1], strict=False))
 
-R_EARTH = 6371000.0
-initial_position = np.array([0.0, 0.0, R_EARTH])
-launch_direction = np.array([0.0, 0.0, 1.0])
-total_flight_time = 64
-rocket_dry_mass = 52.806
-fuel_mass = 12.0
-isp = 321.258976922505
+def load_simulation_config(parameter_json_path):
+    with open(parameter_json_path, encoding="utf-8") as file:
+        model_data = json.load(file)
 
-trajectory = rk4_t(
-    initial_position,
-    rocket_dry_mass,
-    fuel_mass,
-    launch_direction,
-    total_flight_time,
-    thrust_dict,
-    isp,
-)
+    rocket_data = model_data.get("rocket", {})
+    motor_data = model_data.get("motors", {})
+    stored_results = model_data.get("stored_results", {})
 
-print(f"{'time (s)'} {'altitude (m)'} {'velocity (m/s)'}")
+    rocket_dry_mass = rocket_data.get("mass", 50.876)
+    total_flight_time = stored_results.get("flight_time", 64.0)
 
-for t, pos, vel in trajectory[::50]:
-    altitude = np.linalg.norm(pos) - R_EARTH
-    velocity_mag = np.linalg.norm(vel)
+    fuel_mass = 13.04  # takie jest niby na manifeście, chociaż 10-12 było wcześniej chyba
+    isp = motor_data.get("isp", 204.26)  # to wyszło em z staticów
+    # ewenatualnie isp = 321,258976922505 to wyszło pawłowi
 
-    print(f"{t:<10.2f} {altitude:<15.2f} {velocity_mag:<15.2f}")
+    return rocket_dry_mass, fuel_mass, isp, total_flight_time
 
-final_t, final_pos, final_vel = trajectory[-1]
-final_alt = np.linalg.norm(final_pos) - R_EARTH
+
+def main():
+    with open("paths.json", encoding="utf-8") as file:
+        paths = json.load(file)
+
+    thrust_path = paths["thrust_source"]
+    parameter_path = paths["parameters"]
+    rocket_dry_mass, fuel_mass, isp, total_flight_time = load_simulation_config(parameter_path)
+
+    thrust_data = np.loadtxt(thrust_path, delimiter=",")
+    thrust_dict = dict(zip(thrust_data[:, 0], thrust_data[:, 1], strict=False))
+
+    R_EARTH = 6371000.0
+    initial_position = np.array([0.0, 0.0, R_EARTH])
+    launch_direction = np.array([0.0, 0.0, 1.0])
+
+    trajectory = rk4_t(
+        start_position=initial_position,
+        rocket_mass=rocket_dry_mass,
+        fuel_mass=fuel_mass,
+        angle=launch_direction,
+        time=total_flight_time,
+        thrust=thrust_dict,
+        isp=isp,
+    )
+
+    print(f"{'time (s)':<10} {'altitude (m)':<15} {'velocity (m/s)':<15}")
+
+    for t, pos, vel in trajectory:
+        altitude = np.linalg.norm(pos) - R_EARTH
+        velocity_mag = np.linalg.norm(vel)
+
+        print(f"{t:<10.4f} {altitude:<15.4f} {velocity_mag:<15.4f}")
+
+
+if __name__ == "__main__":
+    main()
