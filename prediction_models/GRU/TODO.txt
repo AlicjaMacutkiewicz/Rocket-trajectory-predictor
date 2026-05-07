@@ -59,3 +59,25 @@ GRU TODO:
     > dodać zapis do pliku typu stan_uczenia.txt które daty dokładnie zostały już wykorzystane
     > dodać plotowanie aktualnego wyniku na bieżąco (i zapis do png czy coś)
     
+
+    KOMENTARZ (EM / 08.05.2026) - POPRAWKI I NAJISTOTNIEJSZE KWESTIE: 
+
+    -> Dane wejściowe do GRU (tensor X) : 
+        Zamiana danych na wejściu sieci z czystego przyspieszenia symulatora (Acceleration_X/Y/Z) 
+        na faktyczne dane z czujników rakiety (np. czas, wysokość barometryczna, orientacja z IMU, 
+        estymowana prędkość)
+
+    -> Target do nauki sieci (tensor Y) : 
+        Zdefiniowanie celu dla sieci (etykiet). GRU ma przewidywać tylko poprawkę, 
+        więc targetem musi stać się nieliniowa reszta: przyspieszenie_symulator - przyspieszenie_RK4
+    
+    -> Baza fizyczna $x_b$ (Prekalkulacja RK4) : 
+        Wykorzystanie Twoich funkcji RK4 (z numpy) do przeliczenia "offline" całej idealnej trajektorii
+        przed wrzuceniem danych do PyTorcha (wygenerowanie stałych tablic dla prędkości, przyspieszenia 
+        i pozycji w każdym kroku)
+        
+    -> Całkowanie w PINN Loss (Błąd pozycji) : 
+        Zamiana metody liczenia estymowanej pozycji w funkcji straty. 
+        Zamiast liczyć całą fizykę od nowa, PyTorch ma tylko wycałkować małe poprawki 
+        z GRU i dodać je do twardych danych z RK4: 
+        (> estymowana_pozycja = pozycja_RK4 + całka(wyjście_GRU) <)
