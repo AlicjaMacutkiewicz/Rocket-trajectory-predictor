@@ -74,10 +74,11 @@ def read_flight_data(
     for file_path in flight_files[start_flight : start_flight + num_of_flights]:
         flight_data = pd.read_parquet(file_path)  # read parquet file into a dataframe
 
-        if {"Acceleration_X", "Acceleration_Y", "Acceleration_Z"}.issubset(flight_data.columns):
-            acc_columns = ["Acceleration_X", "Acceleration_Y", "Acceleration_Z"]
-        else:
+        
+        if {"Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z"}.issubset(flight_data.columns):
             acc_columns = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z"]
+        else:
+            acc_columns = ["Acceleration_X", "Acceleration_Y", "Acceleration_Z"]
 
      
         acc_data = flight_data[acc_columns].values.astype(np.float32)
@@ -141,7 +142,7 @@ def make_sequences(flights, flight_times, seq_len, pred_len):
 
     # for every flight take a sequence of seq_len next time steps
     # so that the model can predcit pred_len values
-    for flight, times in zip(flights, flight_times):
+    for flight, times in zip(flights, flight_times,strict=False):
 
         # flight[k] = acceleration at sample k
         # times[k]  = time of sample k
