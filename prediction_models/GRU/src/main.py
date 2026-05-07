@@ -1,10 +1,19 @@
+import argparse
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from GRU_model import GRU
+from pinn_physics import (
+    BaseAccelerationMSELoss,
+    calculate_x_b,
+    default_physics_paths,
+    load_parameters,
+    load_thrust_curve,
+)
 
 # Check for current best hardware options:
 #   mps - apple gpu,
@@ -39,21 +48,53 @@ def get_best_device():
 # .parquet - all the data is read from parquet files
 
 
-def read_flight_data(start_flight, num_of_flights, base_path="../../../demo_flight_data/flight_"):
+def read_flight_data(
+    start_flight,
+    num_of_flights,
+    output_dir="../../../1950-1954",
+):
+   
+    # We need flight_times because the physics baseline x_b depends on time
     flights = []
+    flight_times = []
 
-    for flight_number in range(start_flight, start_flight + num_of_flights):
-        file_path = base_path + str(flight_number) + ".parquet"
+   
+    output_path = Path(output_dir)
+    if not output_path.is_absolute():
+        output_path = Path(__file__).resolve().parent / output_path
+
+    flight_files = sorted(output_path.glob("flight_*.parquet"))
+
+    if len(flight_files) < start_flight + num_of_flights:
+        raise ValueError(
+            f"Expected at least {start_flight + num_of_flights} flight files in {output_path}, "
+            f"found {len(flight_files)}."
+        )
+
+    for file_path in flight_files[start_flight : start_flight + num_of_flights]:
         flight_data = pd.read_parquet(file_path)  # read parquet file into a dataframe
-        # extract only columns with acceleration data
-        acc_data = flight_data[["Acceleration_X", "Acceleration_Y", "Acceleration_Z"]].values
+
+        if {"Acceleration_X", "Acceleration_Y", "Acceleration_Z"}.issubset(flight_data.columns):
+            acc_columns = ["Acceleration_X", "Acceleration_Y", "Acceleration_Z"]
+        else:
+            acc_columns = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z"]
+
+     
+        acc_data = flight_data[acc_columns].values.astype(np.float32)
+
+
+        if "Time" in flight_data.columns:
+            time_data = flight_data["Time"].to_numpy(dtype=np.float32)
+        else:
+            time_data = flight_data.index.to_numpy(dtype=np.float32)
 
         flights.append(acc_data)
+        flight_times.append(time_data)
 
     # "flights" is now a list of numpy arrays where each element contains
     # acceleration data (from X, Y, Z axis) from one flight
     # flights shape: (timesteps, 3)
-    return flights
+    return flights, flight_times
 
 
 # Split list of flights into training and testing sets for the model
@@ -86,25 +127,41 @@ def normalize_flights(flights, array):
 
 # X shape: (num_samples, seq_len, 3)
 # y shape: (num_samples, pred_len, 3)
-def make_sequences(flights, seq_len, pred_len):
-    X, y = [], []
+def make_sequences(flights, flight_times, seq_len, pred_len):
+    # This converts long full-flight time series into many shorter training examples
+
+    #   X     = past seq_len acceleration samples
+    #   y     = next pred_len acceleration samples
+    #   t_y   = times for those next pred_len samples
+
+    # The model sees X
+    # The loss compares the model output with y - x_b(t_y)
+
+    X, y, t_y = [], [], []
 
     # for every flight take a sequence of seq_len next time steps
     # so that the model can predcit pred_len values
-    for flight in flights:
+    for flight, times in zip(flights, flight_times):
+
+        # flight[k] = acceleration at sample k
+        # times[k]  = time of sample k
+        # zip(flights, flight_times) keeps those two arrays paired
         for i in range(len(flight) - seq_len - pred_len):
             # take seq_len values from past observations
             X.append(flight[i : i + seq_len])
             # take pred_len future values to be predicted
             y.append(flight[i + seq_len : i + seq_len + pred_len])
+            # Store exact times for the target part
+            t_y.append(times[i + seq_len : i + seq_len + pred_len])
 
     # convert to numpy arrays bcs apparently creating a tensor from
     # a normal list of numpy arrays is slow af
     X = np.array(X, dtype=np.float32)
     y = np.array(y, dtype=np.float32)
+    t_y = np.array(t_y, dtype=np.float32)
 
     # convert to tensors (required for model training)
-    return torch.from_numpy(X), torch.from_numpy(y)
+    return torch.from_numpy(X), torch.from_numpy(y), torch.from_numpy(t_y)
 
 
 # Train the GRU model using small-batch gradient descent
@@ -115,8 +172,10 @@ def train_model(
     model,
     X_train,
     y_train,
+    t_train,
     X_test,
     y_test,
+    t_test,
     loss,
     optimizer,
     pred_len,
@@ -149,14 +208,27 @@ def train_model(
                 device
             )  # correct future values to be predicted (targets)
 
+            # t_batch contains the target times matching y_batch
+            # Shape:(batch_size, pred_len)
+
+            # The custom loss uses these times to calculate x_b(t) then it
+            # creates the true residual target:
+            #   true_x_s = y_batch - x_b(t_batch)
+            t_batch = t_train[i : i + batch_size].to(device)
+
             # pass input sequence through GRU to get predictions for each time step
             # outputs shape: (batch_size, seq_len, 3)
             outputs, _ = model(X_batch)
             preds = outputs[:, -pred_len:, :]  # take only the part of the sequence
             # that was predicted in the current iteration (so the last pred_len values)
 
-            # calculate loss between predictions and targets
-            batch_loss = loss(preds, y_batch)
+            # The GRU output is treated as predicted_x_s
+            # It is NOT compared with full acceleration directly
+            # The custom loss internally does:
+            #   x_b = calculate_x_b(t_batch)
+            #   true_x_s = y_batch - x_b
+            #   MSE_acc = MSE(preds, true_x_s)
+            batch_loss = loss(preds, y_batch, t_batch)
 
             optimizer.zero_grad()  # reset gradients from previous step
 
@@ -174,7 +246,7 @@ def train_model(
         train_losses.append(avg_loss)
 
         # calcutate average loss over all test batches in this round
-        avg_test_loss = evaluate_model(model, X_test, y_test, loss, batch_size, pred_len)
+        avg_test_loss = evaluate_model(model, X_test, y_test, t_test, loss, batch_size, pred_len)
         test_losses.append(avg_test_loss)
 
         print(
@@ -185,7 +257,7 @@ def train_model(
 
 
 # Evaluate model using test data
-def evaluate_model(model, X_test, y_test, loss, batch_size=64, pred_len=3):
+def evaluate_model(model, X_test, y_test, t_test, loss, batch_size=64, pred_len=3):
 
     model.eval()  # set the mode to evaluation mode
     test_loss = 0.0
@@ -196,12 +268,16 @@ def evaluate_model(model, X_test, y_test, loss, batch_size=64, pred_len=3):
             X_batch = X_test[i : i + batch_size].to(device)
             y_batch = y_test[i : i + batch_size].to(device)
 
+            # Same idea as in training test loss must also compare the network
+            # output with the residual x_s not with the full acceleration.
+            t_batch = t_test[i : i + batch_size].to(device)
+
             # pass input sequence through GRU to get predictions for each time step
             outputs, _ = model(X_batch)
             # take only the last pred_len timesteps from the output sequence
             preds = outputs[:, -pred_len:, :]
             # compute loss between predictions and true values
-            curr_loss = loss(preds, y_batch)
+            curr_loss = loss(preds, y_batch, t_batch)
 
             # calculate total loss value
             test_loss += curr_loss.item()
@@ -210,7 +286,7 @@ def evaluate_model(model, X_test, y_test, loss, batch_size=64, pred_len=3):
     return test_loss / (len(X_test) / batch_size)
 
 
-def plot_prediction(model, X_test, y_test, pred_len, sample_idx=0, axis=0):
+def plot_prediction(model, X_test, y_test, t_test, pred_len, parameters, thrust_curve, sample_idx=0, axis=0):
     model.eval()  # set the mode to evaluation mode
 
     with torch.no_grad():
@@ -225,14 +301,27 @@ def plot_prediction(model, X_test, y_test, pred_len, sample_idx=0, axis=0):
         # target shape: (pred_len, 3)
         target = y_test[sample_idx]
 
+
+        target_times = t_test[sample_idx : sample_idx + 1].to(device)
+
         # pass the input sequence through the GRU model
         # output shape: (1, seq_len, 3)
         # hidden state (_) is ignored
         output, _ = model(input_seq)
 
-        # extract only the last pred_len time steps from the sequence
-        # prediction shape: (pred_len, 3)
-        prediction = output[0, -pred_len:, :].cpu().numpy()
+        predicted_x_s = output[:, -pred_len:, :]
+
+        # Calculate the known physics part for the same future times
+        base_acc = calculate_x_b(target_times, parameters, thrust_curve)
+
+        # Rebuild full acceleration for plotting:
+        #   predicted_x_total = predicted_x_s + x_b
+        # This is only for human-readable visualization
+        # During training the loss compares predicted_x_s with true_x_s
+        # 
+        # prediction shape after [0]:
+        #   (pred_len, 3)
+        prediction = (predicted_x_s + base_acc)[0].cpu().numpy()
 
         # define time axes for past (input) and future (prediction)
         seq_len = input_seq.shape[1]  # length of input sequence
@@ -294,45 +383,102 @@ def plot_losses(train_losses, test_losses):
     print("Saved loss plot to loss_progress.png")
 
 
-batch_size = 64
-training_rounds = 10  # iterations over the entire dataset during training
-seq_len = 40  # length of the input time sequence (how many past steps the model sees)
-pred_len = seq_len  # number of future time steps the model predicts
-loss = nn.MSELoss()  # loss function used for training the model
+def parse_args():
+    # zrobilam ladny parser argumentow z opisami i domyslnymi wartosciami
+    # robione o 3 w nocy pozdrawiam 
+    # UWAGA WAZNE JAK TO ODPALAC NAJLEPIEJ pare przykladow:
+    # quick smoke test:
+    #     python main.py --num-flights 2 --training-rounds 1 --seq-len 5
+    #
+    # larger training run:
+    #       python main.py --num-flights 24 --training-rounds 20
+    #
+    parser = argparse.ArgumentParser()
 
-flights = read_flight_data(10, 20)
-print("data loaded")
+  # TO ROBOCZE I TYLKO U MNIE ZAMIENCIE SE TO
+    parser.add_argument("--output-dir", default="../../../1950-1954")
 
-train_flights, test_flights = split_flights(flights)
+    # Allows skipping the first N sorted flight files
+    # Useful if we want to test another slice of the same dataset
+    parser.add_argument("--start-flight", type=int, default=0)
 
-# flatten all training flights into a single array to calculate statistical values
-train_array = np.concatenate(train_flights, axis=0)
+    # How many flight files to read
+    parser.add_argument("--num-flights", type=int, default=24)
 
-train_flights = normalize_flights(train_flights, train_array)
-test_flights = normalize_flights(test_flights, train_array)
+    # Batch size controls how many short sequences are processed at once
+    parser.add_argument("--batch-size", type=int, default=64)
 
-X_train, y_train = make_sequences(train_flights, seq_len, pred_len)
-X_test, y_test = make_sequences(test_flights, seq_len, pred_len)
+    # Number of full passes over the training sequences
+    parser.add_argument("--training-rounds", type=int, default=10)
 
-print("data preprocessing done")
-device = get_best_device()
-model = GRU(input_size=3, hidden_size=64, output_size=3, num_layers=2).to(device)
-optimizer = optim.Adam(model.parameters(), lr=0.0005)
+    # How many past samples the GRU sees
+    # In this script pred_len is set equal to seq_len so the model predicts
+    # the same number of future samples as it receives from the past.
+    parser.add_argument("--seq-len", type=int, default=40)
+    return parser.parse_args()
 
-# adjusted the arguments passed to the function to process them properly
-train_losses, test_losses = train_model(
-    model,
-    X_train,
-    y_train,
-    X_test,
-    y_test,
-    loss,
-    optimizer,
-    batch_size=batch_size,
-    training_rounds=training_rounds,
-    pred_len=pred_len,
-)
 
-plot_losses(train_losses, test_losses)
+def main():
+    args = parse_args()
 
-plot_prediction(model, X_test, y_test, pred_len, sample_idx=np.random.randint(0, len(X_test)))
+    # For now predict as many future steps as the input history length
+    #   seq_len = 40 -> use 40 past samples and predict 40 future samples.
+    pred_len = args.seq_len
+
+    parameters_path, thrust_curve_path = default_physics_paths()
+    parameters = load_parameters(parameters_path)
+    thrust_curve = load_thrust_curve(thrust_curve_path)
+
+    loss = BaseAccelerationMSELoss(parameters, thrust_curve)
+
+    flights, flight_times = read_flight_data(
+        args.start_flight, args.num_flights, output_dir=args.output_dir
+    )
+    print("data loaded")
+
+    train_flights, test_flights = split_flights(flights)
+    train_times, test_times = split_flights(flight_times)
+
+    X_train, y_train, t_train = make_sequences(train_flights, train_times, args.seq_len, pred_len)
+    X_test, y_test, t_test = make_sequences(test_flights, test_times, args.seq_len, pred_len)
+
+    print("data preprocessing done")
+
+    # device is global because train_model(), evaluate_model() and plot_prediction()already use it directly
+    # idk if that's good practice but it is what it is
+    global device
+    device = get_best_device()
+    model = GRU(input_size=3, hidden_size=64, output_size=3, num_layers=2).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=0.0005)
+
+    train_losses, test_losses = train_model(
+        model,
+        X_train,
+        y_train,
+        t_train,
+        X_test,
+        y_test,
+        t_test,
+        loss,
+        optimizer,
+        batch_size=args.batch_size,
+        training_rounds=args.training_rounds,
+        pred_len=pred_len,
+    )
+
+    plot_losses(train_losses, test_losses)
+
+    plot_prediction(
+        model,
+        X_test,
+        y_test,
+        t_test,
+        pred_len,
+        parameters,
+        thrust_curve,
+        sample_idx=np.random.randint(0, len(X_test)),
+    )
+
+
+if __name__ == "__main__":
+    main()
