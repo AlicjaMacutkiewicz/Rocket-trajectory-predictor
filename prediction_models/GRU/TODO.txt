@@ -12,20 +12,20 @@ GRU TODO:
     > zmienić postać funkcji straty na złożoną, wprowadzając architekturę PINN:
 
        ☑ 1. bazowe MSE
-            - zaimplementować funkcję obliczającą znane zjawiska 
+           ☑ - zaimplementować funkcję obliczającą znane zjawiska 
                 x_b (grawitacja, ciąg) w czasie t
-            - sieć na wyjściu ma generować tylko nieliniowy człon 
+           ☑ - sieć na wyjściu ma generować tylko nieliniowy człon 
                 x_s (wiatr, opór)
-            - obliczyć pierwszą część straty jako zwykłe MSE,
+           ☑ - obliczyć pierwszą część straty jako zwykłe MSE,
                 MSE_acc = loss(sieć_x_s, prawdziwe_x_s), 
                 gdzie prawdziwe_x_s = x_całkowite - x_b
 
-        2. PINN_loss (Więzy fizyczne / Całkowanie)
-            - złożyć z powrotem całkowite estymowane przyspieszenie: 
+       ☑ 2. PINN_loss (Więzy fizyczne / Całkowanie)
+           ☑ - złożyć z powrotem całkowite estymowane przyspieszenie: 
                 dodajemy wyjście z sieci do analitycznego x_b
-            - wycałkować to przyspieszenie (równania kinematyki Newtona), 
+           ☑ - wycałkować to przyspieszenie (równania kinematyki Newtona), 
                 aby uzyskać estymowaną prędkość i pozycję w kolejnych krokach
-            - obliczyć błąd dla tych wycałkowanych wartości: 
+           ☑ - obliczyć błąd dla tych wycałkowanych wartości: 
                 PINN_loss = loss(wycałkowana_pozycja, prawdziwa_pozycja_z_symulatora).
 
         3. finalna funkcja straty

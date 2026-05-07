@@ -226,6 +226,70 @@ class BaseAccelerationMSELoss(nn.Module):
         return self.mse(predicted_x_s, true_x_s)
 
 
+def integrate_acceleration(acceleration, times, initial_position, initial_velocity, initial_time):
+    """
+    Here we go again with the love for physics and newton kinematics :)
+    Integrate acceleration into velocity and position with Newton kinematics
+
+    acceleration shape: (batch_size, pred_len, 3)
+    times shape: (batch_size, pred_len)
+    initial_position / initial_velocity shape: (batch_size, 3)
+    initial_time shape: (batch_size,)
+    """
+
+    positions = []
+    position = initial_position
+    velocity = initial_velocity
+    previous_time = initial_time
+
+    for step in range(acceleration.shape[1]):
+        current_time = times[:, step]
+        dt = (current_time - previous_time).clamp_min(0.0).unsqueeze(-1)
+        current_acceleration = acceleration[:, step, :]
+
+        position = position + (velocity * dt) + (0.5 * current_acceleration * dt * dt)
+        velocity = velocity + (current_acceleration * dt)
+
+        positions.append(position)
+        previous_time = current_time
+
+    return torch.stack(positions, dim=1), velocity
+
+
+class PINNPositionMSELoss(nn.Module):
+    # PINN loss for the GRU residual model:
+    #   1. rebuild total acceleration: predicted_x_total = predicted_x_s + x_b
+    #   2. integrate that acceleration into velocity and position
+    #   3. compare integrated position with simulator position
+    def __init__(self, parameters, thrust_curve):
+        super().__init__()
+        self.parameters = parameters
+        self.thrust_curve = thrust_curve
+        self.mse = nn.MSELoss()
+
+    def forward(
+        self,
+        predicted_x_s,
+        true_position,
+        times,
+        initial_position,
+        initial_velocity,
+        initial_time,
+    ):
+        x_b = calculate_x_b(times, self.parameters, self.thrust_curve)
+        predicted_x_total = predicted_x_s + x_b
+
+        integrated_position, _ = integrate_acceleration(
+            predicted_x_total,
+            times,
+            initial_position,
+            initial_velocity,
+            initial_time,
+        )
+
+        return self.mse(integrated_position, true_position)
+
+
 def default_physics_paths():
 
     root = Path(__file__).resolve().parents[3]
