@@ -11,7 +11,7 @@ GRU TODO:
     > zaimplementować prostą funkcję realizującą obliczenie x_b w danym momencie t
     > zmienić postać funkcji straty na złożoną, wprowadzając architekturę PINN:
 
-        1. bazowe MSE
+       ☑ 1. bazowe MSE
             - zaimplementować funkcję obliczającą znane zjawiska 
                 x_b (grawitacja, ciąg) w czasie t
             - sieć na wyjściu ma generować tylko nieliniowy człon 
