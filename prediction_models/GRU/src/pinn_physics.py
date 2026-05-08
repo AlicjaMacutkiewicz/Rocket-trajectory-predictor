@@ -217,7 +217,9 @@ class BaseAccelerationMSELoss(nn.Module):
         #   true_x_s = true_x_total - x_b
         #
         # This is the target for the GRUUUUU
-        true_x_s = true_x_total - x_b
+        # we only use the first 3 columns of the true_x_total as we only want
+        # to take the acceleration data into consideration
+        true_x_s = true_x_total[:, :, :3] - x_b
 
         # Step 3:
         # Compare what the network predicted with the residual target

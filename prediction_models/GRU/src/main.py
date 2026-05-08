@@ -41,7 +41,6 @@ def get_best_device():
 
 
 # Load data from num_of_flights parquet files into a single numpy array
-# containing X, Y, Z acceleration data
 
 # Structure of file paths from which the function reads:
 # base_path - directory containing the flight parquet files + base file name
@@ -75,15 +74,13 @@ def read_flight_data(
 
     for file_path in flight_files[start_flight : start_flight + num_of_flights]:
         flight_data = pd.read_parquet(file_path)  # read parquet file into a dataframe
-
-        
         if {"Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z"}.issubset(flight_data.columns):
-            acc_columns = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z"]
+            flight_columns = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z", "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z", 'Barometer_Value', 'Sensor_Value']
         else:
-            acc_columns = ["Acceleration_X", "Acceleration_Y", "Acceleration_Z"]
+            flight_columns = ["Acceleration_X", "Acceleration_Y", "Acceleration_Z", "Best_Acc_Z", "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z", 'Barometer_Value', 'Sensor_Value']
 
      
-        acc_data = flight_data[acc_columns].values.astype(np.float32)
+        acc_data = flight_data[flight_columns].values.astype(np.float32)
 
         position_columns = ["Position_X", "Position_Y", "Position_Z"]
         if not set(position_columns).issubset(flight_data.columns):
@@ -104,7 +101,7 @@ def read_flight_data(
         flight_times.append(time_data)
 
     # "flights" is now a list of numpy arrays where each element contains
-    # acceleration data (from X, Y, Z axis) from one flight
+    # sensor data from one flight
     # flights shape: (timesteps, 3)
     return flights, flight_positions, flight_times
 
@@ -127,19 +124,6 @@ def normalize_flights(flights, array):
     std = array.std(axis=0)
     return [(flight - mean) / std for flight in flights]
 
-
-# Convert flight time-series data into shorter learning
-# samples for the GRU model
-# Each sample consists of:
-
-# X: past seq_len time steps - model input sequence
-# y: next pred_len time steps - future values
-# that the model is trained to predict
-
-
-# X shape: (num_samples, seq_len, 3)
-# y_acc shape: (num_samples, pred_len, 3)
-# y_pos shape: (num_samples, pred_len, 3)
 def estimate_velocity(positions, times):
     velocities = np.zeros_like(positions, dtype=np.float32)
 
@@ -157,23 +141,22 @@ def estimate_velocity(positions, times):
 
     return velocities
 
-
+# Convert flight time-series data into shorter training samples for the GRU model
 def make_sequences(flights, flight_positions, flight_times, seq_len, pred_len):
     # This converts long full-flight time series into many shorter training examples
 
-    #   X     = past seq_len acceleration samples
-    #   y     = next pred_len acceleration samples
+    #   X     = past seq_len sensor data samples
+    #   y     = next pred_len sensor data samples
     #   t_y   = times for those next pred_len samples
 
-
-    X, y_acc, y_pos, t_y, initial_pos, initial_vel, initial_time = [], [], [], [], [], [], []
+    X, y, y_pos, t_y, initial_pos, initial_vel, initial_time = [], [], [], [], [], [], []
 
     # for every flight take a sequence of seq_len next time steps
     # so that the model can predcit pred_len values
     for flight, positions, times in zip(flights, flight_positions, flight_times, strict=False):
         velocities = estimate_velocity(positions, times)
 
-        # flight[k] = acceleration at sample k
+        # flight[k] = data collected from sensors at sample k
         # times[k]  = time of sample k
         # zip(flights, flight_times) keeps those two arrays paired
         for i in range(len(flight) - seq_len - pred_len):
@@ -184,7 +167,7 @@ def make_sequences(flights, flight_positions, flight_times, seq_len, pred_len):
             # take seq_len values from past observations
             X.append(flight[i : i + seq_len])
             # take pred_len future values to be predicted
-            y_acc.append(flight[target_start_idx:target_end_idx])
+            y.append(flight[target_start_idx:target_end_idx])
             y_pos.append(positions[target_start_idx:target_end_idx])
             # Store exact times for the target part
             t_y.append(times[target_start_idx:target_end_idx])
@@ -195,7 +178,7 @@ def make_sequences(flights, flight_positions, flight_times, seq_len, pred_len):
     # convert to numpy arrays bcs apparently creating a tensor from
     # a normal list of numpy arrays is slow af
     X = np.array(X, dtype=np.float32)
-    y_acc = np.array(y_acc, dtype=np.float32)
+    y = np.array(y, dtype=np.float32)
     y_pos = np.array(y_pos, dtype=np.float32)
     t_y = np.array(t_y, dtype=np.float32)
     initial_pos = np.array(initial_pos, dtype=np.float32)
@@ -205,7 +188,7 @@ def make_sequences(flights, flight_positions, flight_times, seq_len, pred_len):
     # convert to tensors (required for model training)
     return (
         torch.from_numpy(X),
-        torch.from_numpy(y_acc),
+        torch.from_numpy(y),
         torch.from_numpy(y_pos),
         torch.from_numpy(t_y),
         torch.from_numpy(initial_pos),
@@ -216,8 +199,6 @@ def make_sequences(flights, flight_positions, flight_times, seq_len, pred_len):
 
 # Train the GRU model using small-batch gradient descent
 # one training_round = one full pass over dataset
-
-
 def train_model(
     model,
     X_train,
@@ -257,11 +238,11 @@ def train_model(
             # take a slice of successive input sequences
             # starting from the current time stamp (i)
 
-            # X_batch: (batch_size, seq_len, 3)
-            # where 3 = [Acc_x, Acc_y, Acc_z]
+            # X_batch: (batch_size, seq_len, 8)
+            # where 8 = [Acc_x, Acc_y, Acc_z, AngVel_X, AngVel_Y, AngVel_Z, Bar_val, Sens_val]
             X_batch = X_train[i : i + batch_size].to(device)  # batch input
             y_batch = y_train[i : i + batch_size].to(device)
-            # pos_batch shape: (batch_size, pred_len, 3)
+            # pos_batch shape: (batch_size, pred_len, 8)
             # correct future simulator positions used by the PINN loss
             pos_batch = pos_train[i : i + batch_size].to(device)
 
@@ -276,7 +257,7 @@ def train_model(
             initial_time_batch = initial_time_train[i : i + batch_size].to(device)
 
             # pass input sequence through GRU to get predictions for each time step
-            # outputs shape: (batch_size, seq_len, 3)
+            # outputs shape: (batch_size, seq_len, 8)
             outputs, _ = model(X_batch)
             preds = outputs[:, -pred_len:, :]  # take only the part of the sequence
             # that was predicted in the current iteration (so the last pred_len values)
@@ -562,7 +543,7 @@ def main():
     # idk if that's good practice but it is what it is
     global device
     device = get_best_device()
-    model = GRU(input_size=3, hidden_size=64, output_size=3, num_layers=2).to(device)
+    model = GRU(input_size=8, hidden_size=64, output_size=3, num_layers=2).to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.0005)
 
     train_losses, test_losses = train_model(
