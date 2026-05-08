@@ -1,9 +1,16 @@
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn as nn
+
+CLASSICAL_MODEL_SRC = Path(__file__).resolve().parents[2] / "classical_model" / "src"
+if str(CLASSICAL_MODEL_SRC) not in sys.path:
+    sys.path.append(str(CLASSICAL_MODEL_SRC))
+
+from RK4Sim import rk4_t
 
 # helo here im trying to explain the physics part of the code which honestly i do not understand myself
 # so prepare for something crazy and proobably not entirely correct but hopefully it will be helpful for someone who is also confused like me
@@ -14,6 +21,10 @@ import torch.nn as nn
 # Z is the vertical axis
 # Gravity points down so only Z  is negative.
 GRAVITY = torch.tensor([0.0, 0.0, -9.81], dtype=torch.float32)
+R_EARTH = 6371000.0
+DEFAULT_FUEL_MASS = 13.04
+DEFAULT_ISP = 204.26
+_RK4_CACHE = {}
 
 
 def load_parameters(parameters_path):
@@ -68,8 +79,62 @@ def get_launch_direction(parameters):
     )
 
 
+def _thrust_curve_to_dict(thrust_curve):
+    return dict(zip(thrust_curve[:, 0], thrust_curve[:, 1], strict=False))
+
+
+def _rk4_cache_key(parameters, thrust_curve):
+    rocket = parameters.get("rocket", {})
+    motors = parameters.get("motors", {})
+    stored_results = parameters.get("stored_results", {})
+
+    return (
+        float(rocket.get("mass", 50.876)),
+        float(motors.get("fuel_mass", DEFAULT_FUEL_MASS)),
+        float(motors.get("isp", DEFAULT_ISP)),
+        float(stored_results.get("flight_time", np.max(thrust_curve[:, 0]) if len(thrust_curve) else 0.0)),
+        tuple(get_launch_direction(parameters).tolist()),
+        thrust_curve.shape,
+        float(thrust_curve[0, 0]),
+        float(thrust_curve[-1, 0]),
+        float(thrust_curve[:, 1].sum()),
+    )
+
+
+def _get_rk4_acceleration_table(parameters, thrust_curve):
+    cache_key = _rk4_cache_key(parameters, thrust_curve)
+    cached = _RK4_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    rocket = parameters.get("rocket", {})
+    motors = parameters.get("motors", {})
+    stored_results = parameters.get("stored_results", {})
+
+    rocket_mass = float(rocket.get("mass", 50.876))
+    fuel_mass = float(motors.get("fuel_mass", DEFAULT_FUEL_MASS))
+    isp = float(motors.get("isp", DEFAULT_ISP))
+    flight_time = float(stored_results.get("flight_time", np.max(thrust_curve[:, 0])))
+
+    trajectory = rk4_t(
+        start_position=np.array([0.0, 0.0, R_EARTH], dtype=np.float32),
+        rocket_mass=rocket_mass,
+        fuel_mass=fuel_mass,
+        angle=get_launch_direction(parameters),
+        time=flight_time,
+        thrust=_thrust_curve_to_dict(thrust_curve),
+        isp=isp,
+    )
+
+    rk4_times = np.array([row[0] for row in trajectory], dtype=np.float32)
+    rk4_accelerations = np.array([row[3] for row in trajectory], dtype=np.float32)
+
+    _RK4_CACHE[cache_key] = (rk4_times, rk4_accelerations)
+    return _RK4_CACHE[cache_key]
+
+
 def calculate_x_b(times, parameters, thrust_curve):
-    """Return base acceleration x_b(t): gravity and thrust only.
+    """Return base acceleration x_b(t) from the RK4 baseline model.
 
     x_b - base acceleration
 
@@ -78,13 +143,12 @@ def calculate_x_b(times, parameters, thrust_curve):
         x_total = x_b + x_s
 
     where:
-        x_b = known physics that we caan caldulate directly
-              currently: gravity + engine thrust
+        x_b = known/base physics calculated by classical_model/src/RK4Sim.py
 
         x_s = unknown /nonlinear /messy part for example wind type shit 
 
-    The neural network should not waste capacity learning gravity and thrust thats what I think
-    So this function calculates them directly.
+    The neural network should not waste capacity learning the deterministic RK4 baseline.
+    So this function gets x_b from RK4 and the GRU learns only the residual x_s.
     """
 
     # We get tensors but for fun i added that you can also get a list or NumPy array it converts to tensor
@@ -96,86 +160,19 @@ def calculate_x_b(times, parameters, thrust_curve):
     device = times.device
     dtype = times.dtype
 
-    # Convert the thrust curve from numpy to torch
-    # curve shape:(number_of_points, 2)
-    # curve[:, 0] -> all times from the thrust table
-    # curve[:, 1] -> all thrust values from the thrust table
-    curve = torch.as_tensor(thrust_curve, dtype=dtype, device=device)
+    rk4_times, rk4_accelerations = _get_rk4_acceleration_table(parameters, thrust_curve)
+    flat_times = times.detach().cpu().numpy().reshape(-1)
 
-    # .contiguous() makes the memory layout simple for torch.bucketize().
-    # Without this PyTorch may still work i think so
-    curve_t = curve[:, 0].contiguous()
-    curve_f = curve[:, 1].contiguous()
+    x_b = np.stack(
+        [
+            np.interp(flat_times, rk4_times, rk4_accelerations[:, axis])
+            for axis in range(3)
+        ],
+        axis=-1,
+    )
+    x_b = x_b.reshape((*times.shape, 3))
 
-    # We need thrust(t) for every time in the training batch
-    # The CSV contains thrust only at selected points so we do linear
-    # interpolation :)
-    #   known point A: (t0, f0)
-    #   known point B: (t1, f1)
-    #   requested time: t, somewhere between t0 and t1
-    
-    # We estimate:
-    #   thrust(t) = f0 + alpha * (f1 - f0)
-    #alpha says how far t isbetween t0 and t1.
-    #
-    # torch.bucketize(times, curve_t) finds the index of the first curve_t value >= each requested time
- 
-    idx = torch.bucketize(times, curve_t)
-
-    # idx1 point on the right side of requested time
-    # idx0 point on the left side.
-    # clamp prevents indexing outside the thrust table for times at the beginning or end of the flight
-
-    idx0 = torch.clamp(idx - 1, min=0, max=len(curve_t) - 1)
-    idx1 = torch.clamp(idx, min=0, max=len(curve_t) - 1)
-
-    # Gather the two neighboring time values and thrust values
-    # These tensors have the same shape as times 
-    # If times has shape (batch_size, pred_len), then t0, t1, f0 and f1
-    # also have shape (batch_size, pred_len)
-    t0 = curve_t[idx0]
-    t1 = curve_t[idx1]
-    f0 = curve_f[idx0]
-    f1 = curve_f[idx1]
-
-    # alpha is the interpolation ratio
-    # alpha = 0 exactly at the left point
-    # alpha = 1 exactly at the right point
-    # alpha = 0.5  halfway between
-    # If t0 == t1, division would be impossible
-    # Happens at the edges after clamping, so then we use alpha = 0
-    alpha = torch.where(t1 == t0, torch.zeros_like(times), (times - t0) / (t1 - t0))
-
-    # Interpolated thrust force for each requested time
-    # If time is after the last point in the thrust curve the motor is
-    # considered burned out so thruust becomes 0
-    thrust = torch.where(times <= curve_t[-1], f0 + alpha * (f1 - f0), torch.zeros_like(times))
-
-    # z tego miejsca chcialabym pozdrowic newtona i jego drugie prawo ruchu bo bez tego to bysmy tu nie byli
-   
-    mass = float(parameters["rocket"]["mass"])
-
-    # Direction is a 3D vector [dx, dy, dz].
-    # It converts scalar thrust force into a 3D force/acceleration vector
-    direction = torch.as_tensor(get_launch_direction(parameters), dtype=dtype, device=device)
-
-    # Move gravity to the same device and dtype as the rest of the computation
-    gravity = GRAVITY.to(device=device, dtype=dtype)
-
-    # thrust currently has shape:
-    #   (batch_size, pred_len)
-    # direction has shape:
-    #   (3,)
-    # To multiply them thrust needs an extra last dimension:
-    #   thrust.unsqueeze(-1) -> (batch_size, pred_len, 1)
-    # Then PyTorch broadcasts it with direction:
-    #   (batch_size, pred_len, 1) * (3,)
-    #   -> (batch_size, pred_len, 3)
-    # Result:
-    #   thrust acceeleration vector + gravity vector
-    #
-    # max(mass, 1e-8) prevents division by zero if the config is broken :) becouse shit happens you know
-    return gravity + (thrust.unsqueeze(-1) * direction / max(mass, 1e-8))
+    return torch.as_tensor(x_b, dtype=dtype, device=device)
 
 
 class BaseAccelerationMSELoss(nn.Module):

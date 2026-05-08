@@ -49,7 +49,7 @@ def main():
 
     print(f"{'time (s)':<10} {'altitude (m)':<15} {'velocity (m/s)':<15}")
 
-    for t, pos, vel in trajectory:
+    for t, pos, vel, _acc in trajectory:
         altitude = np.linalg.norm(pos) - R_EARTH
         velocity_mag = np.linalg.norm(vel)
 
