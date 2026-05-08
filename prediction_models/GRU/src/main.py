@@ -13,6 +13,7 @@ from pinn_physics import (
     default_physics_paths,
     load_parameters,
     load_thrust_curve,
+    total_loss,
 )
 
 # Check for current best hardware options:
@@ -220,12 +221,14 @@ def make_sequences(flights, flight_positions, flight_times, seq_len, pred_len):
 def train_model(
     model,
     X_train,
+    y_train,
     pos_train,
     t_train,
     initial_pos_train,
     initial_vel_train,
     initial_time_train,
     X_test,
+    y_test,
     pos_test,
     t_test,
     initial_pos_test,
@@ -257,7 +260,7 @@ def train_model(
             # X_batch: (batch_size, seq_len, 3)
             # where 3 = [Acc_x, Acc_y, Acc_z]
             X_batch = X_train[i : i + batch_size].to(device)  # batch input
-
+            y_batch = y_train[i : i + batch_size].to(device)
             # pos_batch shape: (batch_size, pred_len, 3)
             # correct future simulator positions used by the PINN loss
             pos_batch = pos_train[i : i + batch_size].to(device)
@@ -282,6 +285,7 @@ def train_model(
             # back, integrates total acceleration, and compares position.
             batch_loss = loss(
                 preds,
+                y_batch,
                 pos_batch,
                 t_batch,
                 initial_pos_batch,
@@ -308,6 +312,7 @@ def train_model(
         avg_test_loss = evaluate_model(
             model,
             X_test,
+            y_test,
             pos_test,
             t_test,
             initial_pos_test,
@@ -330,6 +335,7 @@ def train_model(
 def evaluate_model(
     model,
     X_test,
+    y_test,
     pos_test,
     t_test,
     initial_pos_test,
@@ -347,6 +353,7 @@ def evaluate_model(
         for i in range(0, len(X_test), batch_size):
             # select one batch of test inputs
             X_batch = X_test[i : i + batch_size].to(device)
+            y_batch = y_test[i : i + batch_size].to(device)
             pos_batch = pos_test[i : i + batch_size].to(device)
 
             t_batch = t_test[i : i + batch_size].to(device)
@@ -361,6 +368,7 @@ def evaluate_model(
             # compute loss between predictions and true values
             curr_loss = loss(
                 preds,
+                y_batch,
                 pos_batch,
                 t_batch,
                 initial_pos_batch,
@@ -518,8 +526,8 @@ def main():
     parameters = load_parameters(parameters_path)
     thrust_curve = load_thrust_curve(thrust_curve_path)
 
-    loss = PINNPositionMSELoss(parameters, thrust_curve)
-
+    loss = total_loss(parameters, thrust_curve)
+    
     flights, flight_positions, flight_times = read_flight_data(
         args.start_flight, args.num_flights, output_dir=args.output_dir
     )
@@ -560,12 +568,14 @@ def main():
     train_losses, test_losses = train_model(
         model,
         X_train,
+        y_train,
         pos_train,
         t_train,
         initial_pos_train,
         initial_vel_train,
         initial_time_train,
         X_test,
+        y_test,
         pos_test,
         t_test,
         initial_pos_test,

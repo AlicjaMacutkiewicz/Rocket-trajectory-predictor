@@ -289,6 +289,40 @@ class PINNPositionMSELoss(nn.Module):
 
         return self.mse(integrated_position, true_position)
 
+# Integrate the base mse function with calculated pinn_loss
+class total_loss(nn.Module):
+    def __init__(self, parameters, thrust_curve, lambda_h= 0.001):
+        super().__init__()
+
+        self.acc_loss = BaseAccelerationMSELoss(parameters, thrust_curve)
+        self.pinn_loss = PINNPositionMSELoss(parameters, thrust_curve)
+        
+        # lambda_h will be determined experimantally. It determines how strongly
+        # the physical constraints influence the training compared to the data loss
+
+        self.lambda_h = lambda_h
+
+    def forward(
+        self,
+        preds,
+        acc_batch,   
+        pos_batch,
+        t_batch,
+        initial_pos_batch,
+        initial_vel_batch,
+        initial_time_batch,  
+    ):
+        
+        mse_acc = self.acc_loss(preds, acc_batch, t_batch)
+
+        pinn = self.pinn_loss(
+            preds,
+            pos_batch,
+            t_batch,
+            initial_pos_batch,
+            initial_vel_batch,
+            initial_time_batch, )
+        return mse_acc + self.lambda_h * pinn
 
 def default_physics_paths():
 
