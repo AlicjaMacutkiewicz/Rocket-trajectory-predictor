@@ -75,9 +75,13 @@ def read_flight_data(
     for file_path in flight_files[start_flight : start_flight + num_of_flights]:
         flight_data = pd.read_parquet(file_path)  # read parquet file into a dataframe
         if {"Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z"}.issubset(flight_data.columns):
-            flight_columns = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z", "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z", 'Barometer_Value', 'Sensor_Value']
+            flight_columns = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z",
+                              "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z",
+                              'Barometer_Value', 'Sensor_Value']
         else:
-            flight_columns = ["Acceleration_X", "Acceleration_Y", "Acceleration_Z", "Best_Acc_Z", "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z", 'Barometer_Value', 'Sensor_Value']
+            flight_columns = ["Acceleration_X", "Acceleration_Y", "Acceleration_Z",
+                              "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z",
+                              'Barometer_Value', 'Sensor_Value']
 
      
         acc_data = flight_data[flight_columns].values.astype(np.float32)
