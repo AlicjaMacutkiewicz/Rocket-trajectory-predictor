@@ -125,7 +125,7 @@ def split_flights(flights, split_ratio=0.8):
 # values (mean, std) for the training dataset passed as a 1D array
 def normalize_flights(flights, array):
     mean = array.mean(axis=0)
-    std = array.std(axis=0)
+    std = array.std(axis=0) + 1e-8
     return [(flight - mean) / std for flight in flights]
 
 def estimate_velocity(positions, times):
@@ -238,6 +238,7 @@ def train_model(
         # differently during training and evaluation)
 
         # iterate over the training dataset in smaller batches
+       
         for i in range(0, len(X_train), batch_size):
             # take a slice of successive input sequences
             # starting from the current time stamp (i)
@@ -333,6 +334,7 @@ def evaluate_model(
 
     model.eval()  # set the mode to evaluation mode
     test_loss = 0.0
+    num_batches = 0
     with torch.no_grad():
         # iterate over the test dataset in smaller batches
         for i in range(0, len(X_test), batch_size):
@@ -363,9 +365,10 @@ def evaluate_model(
 
             # calculate total loss value
             test_loss += curr_loss.item()
+            num_batches += 1
 
     # return average loss over all test batches
-    return test_loss / (len(X_test) / batch_size)
+    return test_loss / num_batches
 
 
 def plot_prediction(model, X_test, y_test, t_test, pred_len, parameters, thrust_curve, sample_idx=0, axis=0):
@@ -511,17 +514,32 @@ def main():
     parameters = load_parameters(parameters_path)
     thrust_curve = load_thrust_curve(thrust_curve_path)
 
-    loss = total_loss(parameters, thrust_curve)
     
     flights, flight_positions, flight_times = read_flight_data(
         args.start_flight, args.num_flights, output_dir=args.output_dir
     )
     print("data loaded")
+    
+    # noooooooooooormalizacja
+    train_split_idx = int(len(flights) * 0.8)
+    train_acc_concat = np.concatenate(flights[:train_split_idx], axis=0)
+    mean_acc = train_acc_concat.mean(axis=0)
+    std_acc = train_acc_concat.std(axis=0) + 1e-8
 
-    train_flights, test_flights = split_flights(flights)
-    train_positions, test_positions = split_flights(flight_positions)
+    train_pos_concat = np.concatenate(flight_positions[:train_split_idx], axis=0)
+    mean_pos = train_pos_concat.mean(axis=0)
+    std_pos = train_pos_concat.std(axis=0) + 1e-8
+
+    norm_flights = [(f - mean_acc) / std_acc for f in flights]
+    norm_positions = [(p - mean_pos) / std_pos for p in flight_positions]
+
+    train_flights, test_flights = split_flights(norm_flights)
+    train_positions, test_positions = split_flights(norm_positions)
     train_times, test_times = split_flights(flight_times)
 
+    # kooooooooooniec noooooooormalizacji
+
+    train_times, test_times = split_flights(flight_times)
     (
         X_train,
         y_train,
@@ -542,6 +560,10 @@ def main():
     ) = make_sequences(test_flights, test_positions, test_times, args.seq_len, pred_len)
 
     print("data preprocessing done")
+    
+    loss = total_loss(parameters, thrust_curve, mean_acc=mean_acc[:3], 
+                      std_acc = std_acc[:3], mean_pos=mean_pos[:3],
+                        std_pos=std_pos[:3])
 
     # device is global because train_model(), evaluate_model() and plot_prediction()already use it directly
     # idk if that's good practice but it is what it is
