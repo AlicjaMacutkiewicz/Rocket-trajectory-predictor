@@ -336,7 +336,7 @@ class total_loss(nn.Module):
         device = preds.device
         denormalized_preds = preds * self.std_acc.to(device) + self.mean_acc.to(device)
 
-        denormalized_pos = pos_batch[:, :, :3] * self.std_pos + self.mean_pos
+        denormalized_pos = pos_batch[:, :, :3] * self.std_pos.to(device) + self.mean_pos.to(device)
 
         pinn = self.pinn_loss(
             denormalized_preds, 
