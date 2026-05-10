@@ -1,4 +1,5 @@
 import argparse
+import random
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -240,7 +241,12 @@ def train_model(
 
     train_losses = []
     test_losses = []
-    last_pred = [0, 0, 0]
+    last_pred = torch.zeros(
+            (batch_size, pred_len, 3),
+            dtype=torch.float32,
+            device=device,
+        )
+
     print("started training")
 
     for training_round in range(training_rounds):
@@ -250,8 +256,17 @@ def train_model(
         model.train()  # set the mode to train (some layers behave
         # differently during training and evaluation)
 
+        num_batches = len(X_train) // batch_size
+        cutoff_start_index = random.randint(1, num_batches)
+        cutoff_len = min(random.randint(0, num_batches-cutoff_start_index), num_batches//2)
+
+        cutoff_end_index = cutoff_start_index + cutoff_len
+
         # iterate over the training dataset in smaller batches
-        for i in range(0, len(X_train), batch_size):
+        for batch_idx, i in enumerate(range(0, len(X_train), batch_size)):
+            if batch_idx == cutoff_start_index:
+                print("cutoff start at", i)
+                model.change_mode()
             # take a slice of successive input sequences
             # starting from the current time stamp (i)
 
@@ -279,7 +294,7 @@ def train_model(
             # outputs shape: (batch_size, seq_len, 3)
             outputs, _ = model(X_batch)
             preds = outputs[:, -pred_len:, :]  # take only the part of the sequence
-            last_pred = preds
+            last_pred = preds.detach()
             # that was predicted in the current iteration (so the last pred_len values)
 
             # The GRU output is treated as predicted_x_s. The PINN loss adds x_b
@@ -302,6 +317,10 @@ def train_model(
 
             round_loss += batch_loss.item()  # accumulate loss for this round
             total_samples += len(X_batch)
+
+            if batch_idx == cutoff_end_index:
+                model.change_mode()
+                print("cutoff end at", i)
 
         # calcutate average loss over all training batches in this round
         avg_loss = round_loss / total_samples
