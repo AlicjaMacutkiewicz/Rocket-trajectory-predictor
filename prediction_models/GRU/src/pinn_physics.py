@@ -26,7 +26,6 @@ DEFAULT_FUEL_MASS = 13.04
 DEFAULT_ISP = 204.26
 _RK4_CACHE = {}
 
-
 def load_parameters(parameters_path):
     # We need those values to calculate the known deterministic part
     # of acceleration called x_b
@@ -174,7 +173,6 @@ def calculate_x_b(times, parameters, thrust_curve):
     )
     x_b = x_b.reshape((*times.shape, 3))
 
-
     return torch.as_tensor(x_b, dtype=dtype, device=device)
 
 def calculate_position(
@@ -262,7 +260,11 @@ def integrate_acceleration(acceleration, times, initial_position, initial_veloci
     initial_position / initial_velocity shape: (batch_size, 3)
     initial_time shape: (batch_size,)
     """
+    if not torch.is_tensor(times):
+        times = torch.as_tensor(times, dtype=torch.float32)
 
+    # Keep all tensors on the same device and with the same dtype as times.
+  
     positions = []
     position = initial_position
     velocity = initial_velocity

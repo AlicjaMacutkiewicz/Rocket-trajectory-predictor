@@ -28,7 +28,7 @@ kształt tensorów (jak coś tensor to po prostu wielowymiarowa tablica):
 
 
 class GRU(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, num_layers=1):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1, mode = "SpinUp"):
         super().__init__()
 
         self.hidden_size = hidden_size
@@ -55,6 +55,20 @@ class GRU(nn.Module):
         # po przejsciu przez wszystkie bierzemy wynik ostatniej i
         # dajemy do warstwy liniowej która daje nam output dla danego kroku czasowego
         self.fc = nn.Linear(hidden_size, output_size)
+
+        # sieć będzie działać w dwóch trybach 
+        # tryb dostrajania (Spin-Up) - sieć działa na realnym wejsciu z czujników
+        # tryb przewidywania (Cut-off) - sieć zapętla swoje wyjście na kolejne wejście
+        self.mode = mode
+
+    def get_mode(self):
+        return self.mode
+
+    def change_mode(self):
+        if self.mode=="SpinUp":
+            self.mode = "CutOff"
+        else:
+            self.mode = "SpinUp"
 
     def forward(self, x, h0=None):
         """
