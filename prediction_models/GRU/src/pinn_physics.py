@@ -335,21 +335,28 @@ class total_loss(nn.Module):
       
         # Denormalise accelerations and positions as values used to calculate pinn loss
         # are not normalized 
+
+        # everything now is nicely denormalized  :)
+        
         device = preds.device
         denormalized_preds = preds * self.std_acc.to(device) + self.mean_acc.to(device)
+        denormalized_acc_target = acc_batch[:, :, :3] * self.std_acc.to(device) + self.mean_acc.to(device)
 
-        denormalized_pos = pos_batch[:, :, :3] * self.std_pos.to(device) + self.mean_pos.to(device)
+        denormalized_pos_target = pos_batch[:, :, :3] * self.std_pos.to(device) + self.mean_pos.to(device)
+
+        denorm_initial_pos = initial_pos_batch * self.std_pos.to(device) + self.mean_pos.to(device)
+        denorm_initial_vel = initial_vel_batch * self.std_pos.to(device)
 
         pinn = self.pinn_loss(
             denormalized_preds, 
-            denormalized_pos, 
+            denormalized_pos_target, 
             t_batch, 
-            initial_pos_batch, 
-            initial_vel_batch, 
+            denorm_initial_pos,
+            denorm_initial_vel,
             initial_time_batch
         )
 
-        mse_acc = self.acc_loss(preds, acc_batch, t_batch)
+        mse_acc = self.acc_loss(denormalized_preds, denormalized_acc_target, t_batch)
         return mse_acc + self.lambda_h * pinn
 
 def default_physics_paths():

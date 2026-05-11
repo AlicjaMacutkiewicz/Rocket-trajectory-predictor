@@ -33,6 +33,7 @@ class GRU(nn.Module):
 
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+        self.output_size = output_size
 
         # ModuleList to lista z pytorcha która ma podmoduły modelu
         # dzieki temu parametry wszystkich komorek GRU sa widoczne dla optymalizatora
@@ -61,16 +62,16 @@ class GRU(nn.Module):
         # tryb przewidywania (Cut-off) - sieć zapętla swoje wyjście na kolejne wejście
         self.mode = mode
 
-    def get_mode(self):
-        return self.mode
+    # def get_mode(self):
+    #     return self.mode
 
-    def change_mode(self):
-        if self.mode=="SpinUp":
-            self.mode = "CutOff"
-        else:
-            self.mode = "SpinUp"
+    # def change_mode(self):
+    #     if self.mode=="SpinUp":
+    #         self.mode = "CutOff"
+    #     else:
+    #         self.mode = "SpinUp"
 
-    def forward(self, x, h0=None):
+    def forward(self, x, h0 = None, pred_len = 0):
         """
         bede sie odnosiła do tych numerków i rozwijała
         co robimy w forwardzie:
@@ -86,6 +87,7 @@ class GRU(nn.Module):
 
         # 1. sprawdzamy rozmiary wejścia x to tensor o kształcie (batch_size, seq_len, input_size)
         batch_size, seq_len, _ = x.size()
+        device = x.device
 
         # 2. inicjalizujemy stany ukryte (jeśli h0 jest None, to tworzymy tensor zerowy)
         # h to lista, gdzie h[halyer] to aktualny stan ukryty konkrtnej warstwy
@@ -102,16 +104,27 @@ class GRU(nn.Module):
             # każdej warstwy osobno w pętli.
             h = [h0[i] for i in range(self.num_layers)]
 
+        # enkoder / spin-up
+        for t in range(seq_len):
+                    current_input = x[:, t, :]
+                    for layer in range(self.num_layers):
+                        h[layer] = self.layers[layer](current_input, h[layer])
+                        current_input = h[layer]
+        
         # lista do przechowywania wyników z każdego kroku czasowego
         outputs = []
+
+        # ostatnia wejscie dla dekodera
+        decoder_input = x[:, -1, :] # Startujemy od ostatniego znanego wejścia
+        # dekoder / cut-off
         # 3. przechodzimy po kolejnych krokach czasowych sekwencji
-        for t in range(seq_len):
+        for _ in range(pred_len):
             # # Pobieramy dane wejściowe dla chwili t
             # dla całego batcha jednocześnie.
             #
             # x[:, t, :] ma kształt:
             # (batch_size, input_size)
-            layer_input = x[:, t, :]
+            current_input = decoder_input
             # 4. dla każdego kroku czasowego przechodzimy po kolejnych warstwach GRU
             for layer in range(self.num_layers):
                 # ta linia kodu pod jest równoważna z tym h_t = GRUCell(x_t, h_prev)
@@ -121,18 +134,18 @@ class GRU(nn.Module):
                 # - x_t to wejście do aktualnej warstwy w chwili t,
                 # - h_prev to poprzedni stan ukryty tej warstwy.
                 # 5. każda warstwa aktualizuje swój stan ukryty na podstawie swojego poprzedniego stanu ukrytego
-                h[layer] = self.layers[layer](layer_input, h[layer])
+                h[layer] = self.layers[layer](current_input, h[layer])
                 # kolejna warstwa nie dostaje już surowego wejścia x_t,
                 # tylko reprezentację przetworzoną przez warstwę niższą.
-                layer_input = h[layer]
+                current_input = h[layer]
 
             # 6.warstwa liniowa
             # Po przejściu przez wszystkie warstwy GRU
             # zamieniamy wynik ostatniej warstwy na wyjście modelu.
-            y = self.fc(layer_input)
+            y = self.fc(current_input)
             # Zapisujemy wyjście z bieżącego kroku czasowego.
             outputs.append(y)
-
+            # decoder_input = y #heheheheheh
         # 7.składanie wyników
         # Łączymy listę wyników w jeden tensor.
         # Przed stack:
@@ -141,8 +154,11 @@ class GRU(nn.Module):
         # Po stack(dim=1):
         # otrzymujemy tensor o kształcie:
         # (batch_size, seq_len, output_size)
-        outputs = torch.stack(outputs, dim=1)
-
+        # outputs = torch.stack(outputs, dim=1)
+        if pred_len > 0:
+            outputs = torch.stack(outputs, dim=1)
+        else:
+            outputs = torch.empty((batch_size, 0, self.fc.out_features), device=device)
         # końcowe stany ukryte
         # Łączymy końcowe stany ukryte wszystkich warstw.
         # Przed stack:

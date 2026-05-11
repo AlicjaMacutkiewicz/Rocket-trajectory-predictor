@@ -1,3 +1,4 @@
+import math
 import torch as tr
 
 # note:
@@ -14,19 +15,22 @@ class Gru_Cell(tr.nn.Module):
         # (W @ U = weigh matrix)
         # b - bias
 
+        # Xavier initialization
+        std = 1.0 / math.sqrt(hidden_size)
+
         # Reset gate parameters:
-        self.W_r = tr.nn.Parameter(tr.randn(input_size, hidden_size))
-        self.U_r = tr.nn.Parameter(tr.randn(hidden_size, hidden_size))
+        self.W_r = tr.nn.Parameter(tr.empty(input_size, hidden_size).uniform_(-std, std))
+        self.U_r = tr.nn.Parameter(tr.empty(hidden_size, hidden_size).uniform_(-std, std))
         self.b_r = tr.nn.Parameter(tr.zeros(hidden_size))
 
         # Update gate parameters:
-        self.W_z = tr.nn.Parameter(tr.randn(input_size, hidden_size))
-        self.U_z = tr.nn.Parameter(tr.randn(hidden_size, hidden_size))
+        self.W_z = tr.nn.Parameter(tr.empty(input_size, hidden_size).uniform_(-std, std))
+        self.U_z = tr.nn.Parameter(tr.empty(hidden_size, hidden_size).uniform_(-std, std))
         self.b_z = tr.nn.Parameter(tr.zeros(hidden_size))
 
         # Parameters linking the two layers:
-        self.W = tr.nn.Parameter(tr.randn(input_size, hidden_size))
-        self.U = tr.nn.Parameter(tr.randn(hidden_size, hidden_size))
+        self.W = tr.nn.Parameter(tr.empty(input_size, hidden_size).uniform_(-std, std))
+        self.U = tr.nn.Parameter(tr.empty(hidden_size, hidden_size).uniform_(-std, std))
         self.b = tr.nn.Parameter(tr.zeros(hidden_size))
 
     def get_reset_gate(self, x, h_prev):

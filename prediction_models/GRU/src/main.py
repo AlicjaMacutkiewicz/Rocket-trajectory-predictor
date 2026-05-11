@@ -9,11 +9,11 @@ import torch
 import torch.optim as optim
 from GRU_model import GRU
 from pinn_physics import (
-    PINNPositionMSELoss,
     calculate_x_b,
     default_physics_paths,
     load_parameters,
     load_thrust_curve,
+    total_loss,
 )
 
 # Check for current best hardware options:
@@ -221,12 +221,14 @@ def make_sequences(flights, flight_positions, flight_times, seq_len, pred_len):
 def train_model(
     model,
     X_train,
+    y_train,
     pos_train,
     t_train,
     initial_pos_train,
     initial_vel_train,
     initial_time_train,
     X_test,
+    y_test,
     pos_test,
     t_test,
     initial_pos_test,
@@ -257,27 +259,28 @@ def train_model(
         # differently during training and evaluation)
 
         num_batches = len(X_train) // batch_size
-        cutoff_start_index = random.randint(1, num_batches)
-        cutoff_len = min(random.randint(0, num_batches-cutoff_start_index), num_batches//2)
+        # cutoff_start_index = random.randint(1, num_batches)
+        # cutoff_len = min(random.randint(0, num_batches-cutoff_start_index), num_batches//2)
 
-        cutoff_end_index = cutoff_start_index + cutoff_len
+        # cutoff_end_index = cutoff_start_index + cutoff_len
 
         # iterate over the training dataset in smaller batches
-        for batch_idx, i in enumerate(range(0, len(X_train), batch_size)):
-            if batch_idx == cutoff_start_index:
-                print("cutoff start at", i)
-                model.change_mode()
+        for i in range(0, len(X_train), batch_size):
+            # if batch_idx == cutoff_start_index:
+            #     print("cutoff start at", i)
+            #     model.change_mode()
             # take a slice of successive input sequences
             # starting from the current time stamp (i)
 
             # X_batch: (batch_size, seq_len, 3)
             # where 3 = [Acc_x, Acc_y, Acc_z]
-            if model.get_mode() == "SpinUp":
-                X_batch = X_train[i : i + batch_size].to(device)  # batch input
-            else:
-                X_batch = last_pred.to(device).to(device)
+            # if model.get_mode() == "SpinUp":
+            X_batch = X_train[i : i + batch_size].to(device)  # batch input
+            # else:
+                # X_batch = last_pred.to(device).to(device)
             # pos_batch shape: (batch_size, pred_len, 3)
             # correct future simulator positions used by the PINN loss
+            y_batch = y_train[i : i + batch_size].to(device)
             pos_batch = pos_train[i : i + batch_size].to(device)
 
             # t_batch contains the target times matching y_batch
@@ -292,15 +295,17 @@ def train_model(
 
             # pass input sequence through GRU to get predictions for each time step
             # outputs shape: (batch_size, seq_len, 3)
-            outputs, _ = model(X_batch)
-            preds = outputs[:, -pred_len:, :]  # take only the part of the sequence
-            last_pred = preds.detach()
+            # outputs, _ = model(X_batch)
+            # preds = outputs[:, -pred_len:, :]  # take only the part of the sequence
+            preds, _ = model(X_batch, pred_len=pred_len)
+            # last_pred = preds.detach()
             # that was predicted in the current iteration (so the last pred_len values)
 
             # The GRU output is treated as predicted_x_s. The PINN loss adds x_b
             # back, integrates total acceleration, and compares position.
             batch_loss = loss(
                 preds,
+                y_batch,
                 pos_batch,
                 t_batch,
                 initial_pos_batch,
@@ -318,9 +323,9 @@ def train_model(
             round_loss += batch_loss.item()  # accumulate loss for this round
             total_samples += len(X_batch)
 
-            if batch_idx == cutoff_end_index:
-                model.change_mode()
-                print("cutoff end at", i)
+            # if batch_idx == cutoff_end_index:
+            #     model.change_mode()
+            #     print("cutoff end at", i)
 
         # calcutate average loss over all training batches in this round
         avg_loss = round_loss / total_samples
@@ -331,6 +336,7 @@ def train_model(
         avg_test_loss = evaluate_model(
             model,
             X_test,
+            y_test,
             pos_test,
             t_test,
             initial_pos_test,
@@ -353,6 +359,7 @@ def train_model(
 def evaluate_model(
     model,
     X_test,
+    y_test,
     pos_test,
     t_test,
     initial_pos_test,
@@ -370,6 +377,8 @@ def evaluate_model(
         for i in range(0, len(X_test), batch_size):
             # select one batch of test inputs
             X_batch = X_test[i : i + batch_size].to(device)
+
+            y_batch = y_test[i : i + batch_size].to(device)
             pos_batch = pos_test[i : i + batch_size].to(device)
 
             t_batch = t_test[i : i + batch_size].to(device)
@@ -377,13 +386,17 @@ def evaluate_model(
             initial_vel_batch = initial_vel_test[i : i + batch_size].to(device)
             initial_time_batch = initial_time_test[i : i + batch_size].to(device)
 
-            # pass input sequence through GRU to get predictions for each time step
-            outputs, _ = model(X_batch)
-            # take only the last pred_len timesteps from the output sequence
-            preds = outputs[:, -pred_len:, :]
+            # # pass input sequence through GRU to get predictions for each time step
+            # outputs, _ = model(X_batch)
+            # # take only the last pred_len timesteps from the output sequence
+            # preds = outputs[:, -pred_len:, :]
+
+            # Model bezpośrednio zwraca tensor z predykcjami o długości pred_len
+            preds, _ = model(X_batch, pred_len=pred_len)
             # compute loss between predictions and true values
             curr_loss = loss(
                 preds,
+                y_batch,
                 pos_batch,
                 t_batch,
                 initial_pos_batch,
@@ -398,7 +411,7 @@ def evaluate_model(
     return test_loss / (len(X_test) / batch_size)
 
 
-def plot_prediction(model, X_test, y_test, t_test, pred_len, parameters, thrust_curve, sample_idx=0, axis=0):
+def plot_prediction(model, X_test, y_test, t_test, pred_len, parameters, thrust_curve,mean_acc, std_acc, sample_idx=0, axis=0):
     model.eval()  # set the mode to evaluation mode
 
     with torch.no_grad():
@@ -419,10 +432,10 @@ def plot_prediction(model, X_test, y_test, t_test, pred_len, parameters, thrust_
         # pass the input sequence through the GRU model
         # output shape: (1, seq_len, 3)
         # hidden state (_) is ignored
-        output, _ = model(input_seq)
+        # output, _ = model(input_seq)
 
-        predicted_x_s = output[:, -pred_len:, :]
-
+        # predicted_x_s = output[:, -pred_len:, :]
+        predicted_x_s, _ = model(input_seq, pred_len=pred_len)
         # Calculate the known physics part for the same future times
         base_acc = calculate_x_b(target_times, parameters, thrust_curve)
 
@@ -433,8 +446,13 @@ def plot_prediction(model, X_test, y_test, t_test, pred_len, parameters, thrust_
         # 
         # prediction shape after [0]:
         #   (pred_len, 3)
-        prediction = (predicted_x_s + base_acc)[0].cpu().numpy()
 
+        predicted_x_s_denorm = predicted_x_s[0].cpu().numpy() * std_acc + mean_acc
+        target_denorm = target.cpu().numpy() * std_acc + mean_acc
+        history_denorm = X_test[sample_idx].cpu().numpy() * std_acc + mean_acc
+
+        base_acc = calculate_x_b(target_times, parameters, thrust_curve)[0].cpu().numpy()
+        prediction = predicted_x_s_denorm + base_acc
         # define time axes for past (input) and future (prediction)
         seq_len = input_seq.shape[1]  # length of input sequence
 
@@ -448,36 +466,18 @@ def plot_prediction(model, X_test, y_test, t_test, pred_len, parameters, thrust_
         plt.figure(figsize=(10, 5))
         axes_labels = ["X", "Y", "Z"]
         # plot historical data used as input
-        plt.plot(
-            past_time,
-            X_test[sample_idx, :, axis],
-            label="Historia (Input)",
-            color="blue",
-            marker="o",
-        )
         # plot the actual future values
-        plt.plot(future_time, target[:, axis], label="Prawda (Target)", color="green", marker="s")
-        # plot the values predicted by the GRU model
-        plt.plot(
-            future_time,
-            prediction[:, axis],
-            label="Predykcja",
-            color="red",
-            linestyle="--",
-            marker="x",
-        )
-
-        # add a vertical line seperating past and future
-        plt.axvline(x=seq_len - 0.5, color="gray", linestyle="--")
-
-        plt.title(f"Predykcja Przyspieszenia {axes_labels[axis]} (Próbka {sample_idx})")
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        #       plt.show()
-        filename = f"prediction_sample_{sample_idx}.png"
-        plt.savefig(filename, bbox_inches="tight")
-        plt.close()  # Free up memory
-        print(f"Saved prediction plot to {filename}")
+    plt.plot(past_time, history_denorm[:, axis], label="Historia (Input)", color="blue", marker="o")
+    plt.plot(future_time, target_denorm[:, axis], label="Prawda (Target)", color="green", marker="s")
+    plt.plot(future_time, prediction[:, axis], label="Predykcja", color="red", linestyle="--", marker="x")
+    plt.title(f"Predykcja Przyspieszenia {axes_labels[axis]} (Próbka {sample_idx})")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    #       plt.show()
+    filename = f"prediction_sample_{sample_idx}.png"
+    plt.savefig(filename, bbox_inches="tight")
+    plt.close()  # Free up memory
+    print(f"Saved prediction plot to {filename}")
 
 
 def plot_losses(train_losses, test_losses):
@@ -532,7 +532,8 @@ def parse_args():
 
 def main():
     args = parse_args()
-
+    global device
+    device = get_best_device()
     # For now predict as many future steps as the input history length
     #   seq_len = 40 -> use 40 past samples and predict 40 future samples.
     pred_len = args.seq_len
@@ -540,8 +541,6 @@ def main():
     parameters_path, thrust_curve_path = default_physics_paths()
     parameters = load_parameters(parameters_path)
     thrust_curve = load_thrust_curve(thrust_curve_path)
-
-    loss = PINNPositionMSELoss(parameters, thrust_curve)
 
     flights, flight_positions, flight_times = read_flight_data(
         args.start_flight, args.num_flights, output_dir=args.output_dir
@@ -551,6 +550,22 @@ def main():
     train_flights, test_flights = split_flights(flights)
     train_positions, test_positions = split_flights(flight_positions)
     train_times, test_times = split_flights(flight_times)
+
+    all_train_acc = np.concatenate(train_flights, axis=0)
+    mean_acc = all_train_acc.mean(axis=0)
+    std_acc = all_train_acc.std(axis=0)
+
+    all_train_pos = np.concatenate(train_positions, axis=0)
+    mean_pos = all_train_pos.mean(axis=0)
+    std_pos = all_train_pos.std(axis=0)
+
+    train_flights = [(f - mean_acc) / std_acc for f in train_flights]
+    test_flights = [(f - mean_acc) / std_acc for f in test_flights]
+    
+    train_positions = [(p - mean_pos) / std_pos for p in train_positions]
+    test_positions = [(p - mean_pos) / std_pos for p in test_positions]
+
+    loss = total_loss(parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos).to(device)
 
     (
         X_train,
@@ -575,20 +590,21 @@ def main():
 
     # device is global because train_model(), evaluate_model() and plot_prediction()already use it directly
     # idk if that's good practice but it is what it is
-    global device
-    device = get_best_device()
+
     model = GRU(input_size=3, hidden_size=64, output_size=3, num_layers=2).to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.0005)
 
     train_losses, test_losses = train_model(
         model,
         X_train,
+        y_train,
         pos_train,
         t_train,
         initial_pos_train,
         initial_vel_train,
         initial_time_train,
         X_test,
+        y_test,
         pos_test,
         t_test,
         initial_pos_test,
@@ -611,6 +627,8 @@ def main():
         pred_len,
         parameters,
         thrust_curve,
+        mean_acc,
+        std_acc,
         sample_idx=np.random.randint(0, len(X_test)),
     )
 
