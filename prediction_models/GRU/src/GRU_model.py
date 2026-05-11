@@ -28,13 +28,14 @@ kształt tensorów (jak coś tensor to po prostu wielowymiarowa tablica):
 
 
 class GRU(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, num_layers=1, mode="SpinUp"):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1):
         super().__init__()
 
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.output_size = output_size
 
+        internal_input_size = input_size + 1 #flaga
         # ModuleList to lista z pytorcha która ma podmoduły modelu
         # dzieki temu parametry wszystkich komorek GRU sa widoczne dla optymalizatora
         # no musi tak być, bo inaczej optymalizator by nie wiedział że ma aktualizować te parametry podczas treningu
@@ -49,7 +50,7 @@ class GRU(nn.Module):
         # Każda następna warstwa dostaje jako wejście stan ukryty
         # z poprzedniej warstwy, więc jej wejście ma rozmiar hidden_size.
         for i in range(num_layers):
-            in_size = input_size if i == 0 else hidden_size
+            in_size = internal_input_size if i == 0 else hidden_size
             self.layers.append(GRUCell(in_size, hidden_size))
 
         # warstwa liniowa na wyjściu czyli końccowa
@@ -60,7 +61,6 @@ class GRU(nn.Module):
         # sieć będzie działać w dwóch trybach
         # tryb dostrajania (Spin-Up) - sieć działa na realnym wejsciu z czujników
         # tryb przewidywania (Cut-off) - sieć zapętla swoje wyjście na kolejne wejście
-        self.mode = mode
 
     # def get_mode(self):
     #     return self.mode
@@ -104,9 +104,13 @@ class GRU(nn.Module):
             # każdej warstwy osobno w pętli.
             h = [h0[i] for i in range(self.num_layers)]
 
+        flag_spinup = torch.ones((batch_size, 1), dtype=torch.float32, device=device)
+        # flaga = 0.0 (Tryb Cut-Off: "zamrożone wejście, przewiduj!")
+        flag_cutoff = torch.zeros((batch_size, 1), dtype=torch.float32, device=device)
+
         # enkoder / spin-up
         for t in range(seq_len):
-            current_input = x[:, t, :]
+            current_input = torch.cat([x[:, t, :], flag_spinup], dim=-1)
             for layer in range(self.num_layers):
                 h[layer] = self.layers[layer](current_input, h[layer])
                 current_input = h[layer]
@@ -124,7 +128,7 @@ class GRU(nn.Module):
             #
             # x[:, t, :] ma kształt:
             # (batch_size, input_size)
-            current_input = decoder_input
+            current_input = torch.cat([decoder_input, flag_cutoff], dim=-1)
             # 4. dla każdego kroku czasowego przechodzimy po kolejnych warstwach GRU
             for layer in range(self.num_layers):
                 # ta linia kodu pod jest równoważna z tym h_t = GRUCell(x_t, h_prev)
