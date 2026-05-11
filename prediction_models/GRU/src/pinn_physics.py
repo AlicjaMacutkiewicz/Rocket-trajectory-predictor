@@ -5,11 +5,12 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-from RK4Sim import rk4_t
 
 CLASSICAL_MODEL_SRC = Path(__file__).resolve().parents[2] / "classical_model" / "src"
 if str(CLASSICAL_MODEL_SRC) not in sys.path:
     sys.path.append(str(CLASSICAL_MODEL_SRC))
+
+from RK4Sim import rk4_t  # noqa: E402, I001
 
 
 # helo here im trying to explain the physics part of the code which honestly i do not understand myself

@@ -153,33 +153,26 @@ def estimate_velocity(positions, times):
 
     return velocities
 
-
-def make_sequences(flights, flight_positions, flight_times, seq_len, pred_len):
+def make_sequences(flights_inputs, flights_targets, flight_positions, flight_times, seq_len, pred_len):
     # This converts long full-flight time series into many shorter training examples
-
-    #   X     = past seq_len acceleration samples
-    #   y     = next pred_len acceleration samples
-    #   t_y   = times for those next pred_len samples
 
     X, y_acc, y_pos, t_y, initial_pos, initial_vel, initial_time = [], [], [], [], [], [], []
 
-    # for every flight take a sequence of seq_len next time steps
-    # so that the model can predcit pred_len values
-    for flight, positions, times in zip(flights, flight_positions, flight_times, strict=False):
+    # ZMIANA: iterujemy jednocześnie po f_in (wejścia) i f_tar (targety)
+    for f_in, f_tar, positions, times in zip(flights_inputs, flights_targets, flight_positions, flight_times, strict=False):
         velocities = estimate_velocity(positions, times)
 
-        # flight[k] = acceleration at sample k
-        # times[k]  = time of sample k
-        # zip(flights, flight_times) keeps those two arrays paired
-        for i in range(len(flight) - seq_len - pred_len):
+        for i in range(len(f_in) - seq_len - pred_len):
             start_idx = i + seq_len - 1
             target_start_idx = i + seq_len
             target_end_idx = target_start_idx + pred_len
 
-            # take seq_len values from past observations
-            X.append(flight[i : i + seq_len])
-            # take pred_len future values to be predicted
-            y_acc.append(flight[target_start_idx:target_end_idx])
+            # take seq_len values from past observations (z czujników - 8 kolumn)
+            X.append(f_in[i : i + seq_len])
+            
+            # take pred_len future values to be predicted (z przyspieszenia - 3 kolumny)
+            y_acc.append(f_tar[target_start_idx:target_end_idx])
+            
             y_pos.append(positions[target_start_idx:target_end_idx])
             # Store exact times for the target part
             t_y.append(times[target_start_idx:target_end_idx])
@@ -187,8 +180,7 @@ def make_sequences(flights, flight_positions, flight_times, seq_len, pred_len):
             initial_vel.append(velocities[start_idx])
             initial_time.append(times[start_idx])
 
-    # convert to numpy arrays bcs apparently creating a tensor from
-    # a normal list of numpy arrays is slow af
+    # convert to numpy arrays
     X = np.array(X, dtype=np.float32)
     y_acc = np.array(y_acc, dtype=np.float32)
     y_pos = np.array(y_pos, dtype=np.float32)
@@ -207,7 +199,6 @@ def make_sequences(flights, flight_positions, flight_times, seq_len, pred_len):
         torch.from_numpy(initial_vel),
         torch.from_numpy(initial_time),
     )
-
 
 # Train the GRU model using small-batch gradient descent
 # one training_round = one full pass over dataset
@@ -447,7 +438,7 @@ def plot_prediction(
 
         predicted_x_s_denorm = predicted_x_s[0].cpu().numpy() * std_acc + mean_acc
         target_denorm = target.cpu().numpy() * std_acc + mean_acc
-        history_denorm = X_test[sample_idx].cpu().numpy() * std_acc + mean_acc
+        history_denorm = X_test[sample_idx, :, :3].cpu().numpy() * std_acc + mean_acc      
 
         base_acc = calculate_x_b(target_times, parameters, thrust_curve)[0].cpu().numpy()
         prediction = predicted_x_s_denorm + base_acc
@@ -547,31 +538,41 @@ def main():
     parameters = load_parameters(parameters_path)
     thrust_curve = load_thrust_curve(thrust_curve_path)
 
-    flights, flight_positions, flight_times = read_flight_data(
+    flights_inputs, flights_targets, flight_positions, flight_times = read_flight_data(
         args.start_flight, args.num_flights, output_dir=args.output_dir
     )
     print("data loaded")
 
-    train_flights, test_flights = split_flights(flights)
+    train_inputs, test_inputs = split_flights(flights_inputs)
+    train_targets, test_targets = split_flights(flights_targets)
     train_positions, test_positions = split_flights(flight_positions)
     train_times, test_times = split_flights(flight_times)
 
-    all_train_acc = np.concatenate(train_flights, axis=0)
-    mean_acc = all_train_acc.mean(axis=0)
-    std_acc = all_train_acc.std(axis=0)
+    all_train_inputs = np.concatenate(train_inputs, axis=0)
+    mean_in = all_train_inputs.mean(axis=0)
+    std_in = all_train_inputs.std(axis=0)
+    std_in = np.where(std_in == 0, 1e-6, std_in) # div by zero safeguard
+
+    all_train_targets = np.concatenate(train_targets, axis=0)
+    mean_acc = all_train_targets.mean(axis=0)
+    std_acc = all_train_targets.std(axis=0)
+    std_acc = np.where(std_acc == 0, 1e-6, std_acc)
 
     all_train_pos = np.concatenate(train_positions, axis=0)
     mean_pos = all_train_pos.mean(axis=0)
     std_pos = all_train_pos.std(axis=0)
+    std_pos = np.where(std_pos == 0, 1e-6, std_pos)
 
-    train_flights = [(f - mean_acc) / std_acc for f in train_flights]
-    test_flights = [(f - mean_acc) / std_acc for f in test_flights]
+    train_inputs = [(f - mean_in) / std_in for f in train_inputs]
+    test_inputs = [(f - mean_in) / std_in for f in test_inputs]
+    
+    train_targets = [(f - mean_acc) / std_acc for f in train_targets]
+    test_targets = [(f - mean_acc) / std_acc for f in test_targets]
 
     train_positions = [(p - mean_pos) / std_pos for p in train_positions]
     test_positions = [(p - mean_pos) / std_pos for p in test_positions]
 
     loss = total_loss(parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos).to(device)
-
     (
         X_train,
         y_train,
@@ -580,7 +581,7 @@ def main():
         initial_pos_train,
         initial_vel_train,
         initial_time_train,
-    ) = make_sequences(train_flights, train_positions, train_times, args.seq_len, pred_len)
+    ) = make_sequences(train_inputs, train_targets, train_positions, train_times, args.seq_len, pred_len)
     (
         X_test,
         y_test,
@@ -589,14 +590,14 @@ def main():
         initial_pos_test,
         initial_vel_test,
         initial_time_test,
-    ) = make_sequences(test_flights, test_positions, test_times, args.seq_len, pred_len)
+    ) = make_sequences(test_inputs, test_targets, test_positions, test_times, args.seq_len, pred_len)
 
     print("data preprocessing done")
 
     # device is global because train_model(), evaluate_model() and plot_prediction()already use it directly
     # idk if that's good practice but it is what it is
 
-    model = GRU(input_size=3, hidden_size=64, output_size=3, num_layers=2).to(device)
+    model = GRU(input_size=8, hidden_size=64, output_size=3, num_layers=2).to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.0005)
 
     train_losses, test_losses = train_model(
@@ -645,7 +646,7 @@ def main():
         log_file.write(
             f"parametry: Epoki={args.training_rounds}, Batch={args.batch_size}, Rok={args.year}\n"
         )
-        log_file.write(f"Wykorzystano lotów: {len(flights)}\n")
+        log_file.write(f"Wykorzystano lotów: {len(flights_inputs)}\n")
         log_file.write("-" * 40 + "\n")
     print("zaktualizowano plik stan_uczenia.txt")
 
