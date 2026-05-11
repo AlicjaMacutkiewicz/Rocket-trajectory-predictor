@@ -1,5 +1,4 @@
 import argparse
-import random
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -54,13 +53,11 @@ def read_flight_data(
     num_of_flights,
     output_dir="../../../1955-1959",
 ):
-   
-    # We need flight_times because the physics baseline x_b depends on time
-    flights = []
+    flights_inputs = []
+    flights_targets = []
     flight_positions = []
     flight_times = []
 
-   
     output_path = Path(output_dir)
     if not output_path.is_absolute():
         output_path = Path(__file__).resolve().parent / output_path
@@ -69,44 +66,43 @@ def read_flight_data(
 
     if len(flight_files) < start_flight + num_of_flights:
         raise ValueError(
-            f"Expected at least {start_flight + num_of_flights} flight files in {output_path}, "
-            f"found {len(flight_files)}."
+            f"Expected at least {start_flight + num_of_flights} flight files, found {len(flight_files)}."
         )
 
     for file_path in flight_files[start_flight : start_flight + num_of_flights]:
-        flight_data = pd.read_parquet(file_path)  # read parquet file into a dataframe
+        flight_data = pd.read_parquet(file_path)
 
-        
-        if {"Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z"}.issubset(flight_data.columns):
-            acc_columns = ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z"]
-        else:
-            acc_columns = ["Acceleration_X", "Acceleration_Y", "Acceleration_Z"]
+        sensor_columns = [
+            "Best_Acc_X",
+            "Best_Acc_Y",
+            "Best_Acc_Z",
+            "Best_AngVel_X",
+            "Best_AngVel_Y",
+            "Best_AngVel_Z",
+            "Barometer_Value",
+            "Sensor_Value",
+        ]
+        if not set(sensor_columns).issubset(flight_data.columns):
+            raise ValueError(f"{file_path} is missing required sensor columns: {sensor_columns}")
+        input_data = flight_data[sensor_columns].values.astype(np.float32)
 
-     
-        acc_data = flight_data[acc_columns].values.astype(np.float32)
+        target_columns = ["Acceleration_X", "Acceleration_Y", "Acceleration_Z"]
+        target_data = flight_data[target_columns].values.astype(np.float32)
 
         position_columns = ["Position_X", "Position_Y", "Position_Z"]
-        if not set(position_columns).issubset(flight_data.columns):
-            raise ValueError(
-                f"{file_path} is missing required simulator position columns: "
-                f"{position_columns}."
-            )
         position_data = flight_data[position_columns].values.astype(np.float32)
-
 
         if "Time" in flight_data.columns:
             time_data = flight_data["Time"].to_numpy(dtype=np.float32)
         else:
             time_data = flight_data.index.to_numpy(dtype=np.float32)
 
-        flights.append(acc_data)
+        flights_inputs.append(input_data)
+        flights_targets.append(target_data)
         flight_positions.append(position_data)
         flight_times.append(time_data)
 
-    # "flights" is now a list of numpy arrays where each element contains
-    # acceleration data (from X, Y, Z axis) from one flight
-    # flights shape: (timesteps, 3)
-    return flights, flight_positions, flight_times
+    return flights_inputs, flights_targets, flight_positions, flight_times
 
 
 # Split list of flights into training and testing sets for the model
@@ -164,7 +160,6 @@ def make_sequences(flights, flight_positions, flight_times, seq_len, pred_len):
     #   X     = past seq_len acceleration samples
     #   y     = next pred_len acceleration samples
     #   t_y   = times for those next pred_len samples
-
 
     X, y_acc, y_pos, t_y, initial_pos, initial_vel, initial_time = [], [], [], [], [], [], []
 
@@ -243,11 +238,6 @@ def train_model(
 
     train_losses = []
     test_losses = []
-    last_pred = torch.zeros(
-            (batch_size, pred_len, 3),
-            dtype=torch.float32,
-            device=device,
-        )
 
     print("started training")
 
@@ -255,16 +245,8 @@ def train_model(
         round_loss = 0.0  # cumulated prediction error for the whole round
         total_samples = 0
 
-        model.train()  # set the mode to train (some layers behave
-        # differently during training and evaluation)
+        model.train()
 
-        num_batches = len(X_train) // batch_size
-        # cutoff_start_index = random.randint(1, num_batches)
-        # cutoff_len = min(random.randint(0, num_batches-cutoff_start_index), num_batches//2)
-
-        # cutoff_end_index = cutoff_start_index + cutoff_len
-
-        # iterate over the training dataset in smaller batches
         for i in range(0, len(X_train), batch_size):
             # if batch_idx == cutoff_start_index:
             #     print("cutoff start at", i)
@@ -277,7 +259,7 @@ def train_model(
             # if model.get_mode() == "SpinUp":
             X_batch = X_train[i : i + batch_size].to(device)  # batch input
             # else:
-                # X_batch = last_pred.to(device).to(device)
+            # X_batch = last_pred.to(device).to(device)
             # pos_batch shape: (batch_size, pred_len, 3)
             # correct future simulator positions used by the PINN loss
             y_batch = y_train[i : i + batch_size].to(device)
@@ -352,6 +334,11 @@ def train_model(
             f"Iteration {training_round + 1}, train loss: {avg_loss:.8e}, test loss: {avg_test_loss:.8e}"
         )
 
+        if (training_round + 1) % 5 == 0:
+            checkpoint_filename = f"gru_checkpoint_round_{training_round + 1}_seq{pred_len}.pth"
+            torch.save(model.state_dict(), checkpoint_filename)
+            print(f"checkpoint: {checkpoint_filename}")
+
     return train_losses, test_losses
 
 
@@ -411,7 +398,19 @@ def evaluate_model(
     return test_loss / (len(X_test) / batch_size)
 
 
-def plot_prediction(model, X_test, y_test, t_test, pred_len, parameters, thrust_curve,mean_acc, std_acc, sample_idx=0, axis=0):
+def plot_prediction(
+    model,
+    X_test,
+    y_test,
+    t_test,
+    pred_len,
+    parameters,
+    thrust_curve,
+    mean_acc,
+    std_acc,
+    sample_idx=0,
+    axis=0,
+):
     model.eval()  # set the mode to evaluation mode
 
     with torch.no_grad():
@@ -425,7 +424,6 @@ def plot_prediction(model, X_test, y_test, t_test, pred_len, parameters, thrust_
         # select corresponding correct future values to be predicted (targets)
         # target shape: (pred_len, 3)
         target = y_test[sample_idx]
-
 
         target_times = t_test[sample_idx : sample_idx + 1].to(device)
 
@@ -443,7 +441,7 @@ def plot_prediction(model, X_test, y_test, t_test, pred_len, parameters, thrust_
         #   predicted_x_total = predicted_x_s + x_b
         # This is only for human-readable visualization
         # During training the loss compares predicted_x_s with true_x_s
-        # 
+        #
         # prediction shape after [0]:
         #   (pred_len, 3)
 
@@ -468,8 +466,12 @@ def plot_prediction(model, X_test, y_test, t_test, pred_len, parameters, thrust_
         # plot historical data used as input
         # plot the actual future values
     plt.plot(past_time, history_denorm[:, axis], label="Historia (Input)", color="blue", marker="o")
-    plt.plot(future_time, target_denorm[:, axis], label="Prawda (Target)", color="green", marker="s")
-    plt.plot(future_time, prediction[:, axis], label="Predykcja", color="red", linestyle="--", marker="x")
+    plt.plot(
+        future_time, target_denorm[:, axis], label="Prawda (Target)", color="green", marker="s"
+    )
+    plt.plot(
+        future_time, prediction[:, axis], label="Predykcja", color="red", linestyle="--", marker="x"
+    )
     plt.title(f"Predykcja Przyspieszenia {axes_labels[axis]} (Próbka {sample_idx})")
     plt.legend()
     plt.grid(True, alpha=0.3)
@@ -497,7 +499,7 @@ def plot_losses(train_losses, test_losses):
 
 def parse_args():
     # zrobilam ladny parser argumentow z opisami i domyslnymi wartosciami
-    # robione o 3 w nocy pozdrawiam 
+    # robione o 3 w nocy pozdrawiam
     # UWAGA WAZNE JAK TO ODPALAC NAJLEPIEJ pare przykladow:
     # quick smoke test:
     #     python main.py --num-flights 2 --training-rounds 1 --seq-len 5
@@ -507,7 +509,7 @@ def parse_args():
     #
     parser = argparse.ArgumentParser()
 
-  # TO ROBOCZE I TYLKO U MNIE ZAMIENCIE SE TO
+    # TO ROBOCZE I TYLKO U MNIE ZAMIENCIE SE TO
     parser.add_argument("--output-dir", default="../../../1955-1959")
 
     # Allows skipping the first N sorted flight files
@@ -527,6 +529,9 @@ def parse_args():
     # In this script pred_len is set equal to seq_len so the model predicts
     # the same number of future samples as it receives from the past.
     parser.add_argument("--seq-len", type=int, default=40)
+
+    parser.add_argument("--year", type=str, default="2025")
+
     return parser.parse_args()
 
 
@@ -561,7 +566,7 @@ def main():
 
     train_flights = [(f - mean_acc) / std_acc for f in train_flights]
     test_flights = [(f - mean_acc) / std_acc for f in test_flights]
-    
+
     train_positions = [(p - mean_pos) / std_pos for p in train_positions]
     test_positions = [(p - mean_pos) / std_pos for p in test_positions]
 
@@ -618,7 +623,6 @@ def main():
     )
 
     plot_losses(train_losses, test_losses)
-
     plot_prediction(
         model,
         X_test,
@@ -631,6 +635,19 @@ def main():
         std_acc,
         sample_idx=np.random.randint(0, len(X_test)),
     )
+
+    model_filename = f"gru_model_rounds{args.training_rounds}_seq{args.seq_len}.pth"
+    torch.save(model.state_dict(), model_filename)
+    print(f"zapisano wagi modelu do pliku: {model_filename}")
+
+    with open("stan_uczenia.txt", "a") as log_file:
+        log_file.write(f"Trenowano model: {model_filename}\n")
+        log_file.write(
+            f"parametry: Epoki={args.training_rounds}, Batch={args.batch_size}, Rok={args.year}\n"
+        )
+        log_file.write(f"Wykorzystano lotów: {len(flights)}\n")
+        log_file.write("-" * 40 + "\n")
+    print("zaktualizowano plik stan_uczenia.txt")
 
 
 if __name__ == "__main__":

@@ -56,7 +56,7 @@ def rk4_t(start_position, rocket_mass, fuel_mass, angle, time, thrust, isp):
             fuel_mass -= mdot * dt
             fuel_mass = max(fuel_mass, 0.0)
 
-        position, velocity, acceleration = rk4_next(  # noqa: RUF059
+        position, velocity, acceleration = rk4_next(
             dt, fuel_mass + rocket_mass, position, angle, velocity, current_thrust
         )
         trajectory.append((t, np.copy(position), np.copy(velocity), np.copy(acceleration)))

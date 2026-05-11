@@ -5,18 +5,18 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+from RK4Sim import rk4_t
 
 CLASSICAL_MODEL_SRC = Path(__file__).resolve().parents[2] / "classical_model" / "src"
 if str(CLASSICAL_MODEL_SRC) not in sys.path:
     sys.path.append(str(CLASSICAL_MODEL_SRC))
 
-from RK4Sim import rk4_t
 
 # helo here im trying to explain the physics part of the code which honestly i do not understand myself
 # so prepare for something crazy and proobably not entirely correct but hopefully it will be helpful for someone who is also confused like me
-# Constant gravity vector 
+# Constant gravity vector
 # Acceleration vector has three components:
-#[X acceleration, Y acceleration, Z acceleration]
+# [X acceleration, Y acceleration, Z acceleration]
 #
 # Z is the vertical axis
 # Gravity points down so only Z  is negative.
@@ -26,15 +26,16 @@ DEFAULT_FUEL_MASS = 13.04
 DEFAULT_ISP = 204.26
 _RK4_CACHE = {}
 
+
 def load_parameters(parameters_path):
     # We need those values to calculate the known deterministic part
     # of acceleration called x_b
-    with open(parameters_path, "r", encoding="utf-8") as file:
+    with open(parameters_path, encoding="utf-8") as file:
         return json.load(file)
 
 
 def load_thrust_curve(thrust_path):
-  
+
     # The file does not contain a thrust value for every possible time.
     # Later calculate_x_b() will interpolate between these known points hi hi.
     curve = np.loadtxt(thrust_path, delimiter=",", dtype=np.float32)
@@ -55,7 +56,7 @@ def get_launch_direction(parameters):
     flight = parameters.get("flight", {})
 
     # JSON stores angles in degrees. Numpy trigonometric functions expect radians
-    # so we convert degrees -> radians here 
+    # so we convert degrees -> radians here
     inclination = np.deg2rad(float(flight.get("inclination", 90.0)))
     heading = np.deg2rad(float(flight.get("heading", 0.0)))
 
@@ -91,7 +92,11 @@ def _rk4_cache_key(parameters, thrust_curve):
         float(rocket.get("mass", 50.876)),
         float(motors.get("fuel_mass", DEFAULT_FUEL_MASS)),
         float(motors.get("isp", DEFAULT_ISP)),
-        float(stored_results.get("flight_time", np.max(thrust_curve[:, 0]) if len(thrust_curve) else 0.0)),
+        float(
+            stored_results.get(
+                "flight_time", np.max(thrust_curve[:, 0]) if len(thrust_curve) else 0.0
+            )
+        ),
         tuple(get_launch_direction(parameters).tolist()),
         thrust_curve.shape,
         float(thrust_curve[0, 0]),
@@ -146,7 +151,7 @@ def calculate_x_b(times, parameters, thrust_curve):
     where:
         x_b = known/base physics calculated by classical_model/src/RK4Sim.py
 
-        x_s = unknown /nonlinear /messy part for example wind type shit 
+        x_s = unknown /nonlinear /messy part for example wind type shit
 
     The neural network should not waste capacity learning the deterministic RK4 baseline.
     So this function gets x_b from RK4 and the GRU learns only the residual x_s.
@@ -157,7 +162,7 @@ def calculate_x_b(times, parameters, thrust_curve):
         times = torch.as_tensor(times, dtype=torch.float32)
 
     # Keep all tensors on the same device and with the same dtype as times.
-    
+
     device = times.device
     dtype = times.dtype
 
@@ -165,15 +170,13 @@ def calculate_x_b(times, parameters, thrust_curve):
     flat_times = times.detach().cpu().numpy().reshape(-1)
 
     x_b = np.stack(
-        [
-            np.interp(flat_times, rk4_times, rk4_accelerations[:, axis])
-            for axis in range(3)
-        ],
+        [np.interp(flat_times, rk4_times, rk4_accelerations[:, axis]) for axis in range(3)],
         axis=-1,
     )
     x_b = x_b.reshape((*times.shape, 3))
 
     return torch.as_tensor(x_b, dtype=dtype, device=device)
+
 
 def calculate_position(
     times,
@@ -182,7 +185,10 @@ def calculate_position(
 ):
 
     if not torch.is_tensor(times):
-        times = torch.as_tensor(times, dtype=torch.float32,)
+        times = torch.as_tensor(
+            times,
+            dtype=torch.float32,
+        )
 
     device = times.device
     dtype = times.dtype
@@ -191,22 +197,20 @@ def calculate_position(
     flat_times = times.detach().cpu().numpy().reshape(-1)
 
     positions = np.stack(
-        [
-            np.interp(flat_times, rk4_times, rk4_positions[:, axis])
-            for axis in range(3)
-        ],
+        [np.interp(flat_times, rk4_times, rk4_positions[:, axis]) for axis in range(3)],
         axis=-1,
     )
     positions = positions.reshape((*times.shape, 3))
 
     return torch.as_tensor(positions, dtype=dtype, device=device)
 
+
 class BaseAccelerationMSELoss(nn.Module):
     # Here everything comes togheter
     #
     # It is still a normal MSE loss but it compares the network output
     # against the nonlinear acceleration x_s not against the full x_total
-    
+
     # Formula:
     #   true_x_s = true_x_total - x_b
     #   MSE_acc = MSE(predicted_x_s, true_x_s)
@@ -250,6 +254,7 @@ class BaseAccelerationMSELoss(nn.Module):
         # FYI: if this value is small we good
         return self.mse(predicted_x_s, true_x_s)
 
+
 def integrate_acceleration(acceleration, times, initial_position, initial_velocity, initial_time):
     """
     Here we go again with the love for physics and newton kinematics :)
@@ -264,7 +269,7 @@ def integrate_acceleration(acceleration, times, initial_position, initial_veloci
         times = torch.as_tensor(times, dtype=torch.float32)
 
     # Keep all tensors on the same device and with the same dtype as times.
-  
+
     positions = []
     position = initial_position
     velocity = initial_velocity
@@ -282,6 +287,7 @@ def integrate_acceleration(acceleration, times, initial_position, initial_veloci
         previous_time = current_time
 
     return torch.stack(positions, dim=1), velocity
+
 
 class PINNPositionMSELoss(nn.Module):
     # PINN loss for the GRU residual model:
@@ -316,9 +322,12 @@ class PINNPositionMSELoss(nn.Module):
 
         return self.mse(integrated_position, true_position)
 
+
 # Integrate the base mse function with calculated pinn_loss
 class total_loss(nn.Module):
-    def __init__(self, parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos, lambda_h=1e-6):
+    def __init__(
+        self, parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos, lambda_h=1e-6
+    ):
         super().__init__()
         self.acc_loss = BaseAccelerationMSELoss(parameters, thrust_curve)
         self.pinn_loss = PINNPositionMSELoss(parameters, thrust_curve)
@@ -330,34 +339,47 @@ class total_loss(nn.Module):
 
         self.lambda_h = lambda_h
 
-    def forward(self, preds, acc_batch, pos_batch, t_batch, 
-                initial_pos_batch, initial_vel_batch, initial_time_batch):
-      
+    def forward(
+        self,
+        preds,
+        acc_batch,
+        pos_batch,
+        t_batch,
+        initial_pos_batch,
+        initial_vel_batch,
+        initial_time_batch,
+    ):
+
         # Denormalise accelerations and positions as values used to calculate pinn loss
-        # are not normalized 
+        # are not normalized
 
         # everything now is nicely denormalized  :)
-        
+
         device = preds.device
         denormalized_preds = preds * self.std_acc.to(device) + self.mean_acc.to(device)
-        denormalized_acc_target = acc_batch[:, :, :3] * self.std_acc.to(device) + self.mean_acc.to(device)
+        denormalized_acc_target = acc_batch[:, :, :3] * self.std_acc.to(device) + self.mean_acc.to(
+            device
+        )
 
-        denormalized_pos_target = pos_batch[:, :, :3] * self.std_pos.to(device) + self.mean_pos.to(device)
+        denormalized_pos_target = pos_batch[:, :, :3] * self.std_pos.to(device) + self.mean_pos.to(
+            device
+        )
 
         denorm_initial_pos = initial_pos_batch * self.std_pos.to(device) + self.mean_pos.to(device)
         denorm_initial_vel = initial_vel_batch * self.std_pos.to(device)
 
         pinn = self.pinn_loss(
-            denormalized_preds, 
-            denormalized_pos_target, 
-            t_batch, 
+            denormalized_preds,
+            denormalized_pos_target,
+            t_batch,
             denorm_initial_pos,
             denorm_initial_vel,
-            initial_time_batch
+            initial_time_batch,
         )
 
         mse_acc = self.acc_loss(denormalized_preds, denormalized_acc_target, t_batch)
         return mse_acc + self.lambda_h * pinn
+
 
 def default_physics_paths():
 

@@ -28,7 +28,7 @@ kształt tensorów (jak coś tensor to po prostu wielowymiarowa tablica):
 
 
 class GRU(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, num_layers=1, mode = "SpinUp"):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1, mode="SpinUp"):
         super().__init__()
 
         self.hidden_size = hidden_size
@@ -57,7 +57,7 @@ class GRU(nn.Module):
         # dajemy do warstwy liniowej która daje nam output dla danego kroku czasowego
         self.fc = nn.Linear(hidden_size, output_size)
 
-        # sieć będzie działać w dwóch trybach 
+        # sieć będzie działać w dwóch trybach
         # tryb dostrajania (Spin-Up) - sieć działa na realnym wejsciu z czujników
         # tryb przewidywania (Cut-off) - sieć zapętla swoje wyjście na kolejne wejście
         self.mode = mode
@@ -71,7 +71,7 @@ class GRU(nn.Module):
     #     else:
     #         self.mode = "SpinUp"
 
-    def forward(self, x, h0 = None, pred_len = 0):
+    def forward(self, x, h0=None, pred_len=0):
         """
         bede sie odnosiła do tych numerków i rozwijała
         co robimy w forwardzie:
@@ -106,16 +106,16 @@ class GRU(nn.Module):
 
         # enkoder / spin-up
         for t in range(seq_len):
-                    current_input = x[:, t, :]
-                    for layer in range(self.num_layers):
-                        h[layer] = self.layers[layer](current_input, h[layer])
-                        current_input = h[layer]
-        
+            current_input = x[:, t, :]
+            for layer in range(self.num_layers):
+                h[layer] = self.layers[layer](current_input, h[layer])
+                current_input = h[layer]
+
         # lista do przechowywania wyników z każdego kroku czasowego
         outputs = []
 
         # ostatnia wejscie dla dekodera
-        decoder_input = x[:, -1, :] # Startujemy od ostatniego znanego wejścia
+        decoder_input = x[:, -1, :]  # Startujemy od ostatniego znanego wejścia
         # dekoder / cut-off
         # 3. przechodzimy po kolejnych krokach czasowych sekwencji
         for _ in range(pred_len):
