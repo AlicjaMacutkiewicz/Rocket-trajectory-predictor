@@ -1,12 +1,14 @@
 import numpy as np
-from scipy import constants as const
+
+G = 6.67430e-11
+G0 = 9.80665
 
 
 # liczy kolejna pozycje po czasie dt
 def rk4_next(dt, mass, position, angle, velocity, thrust):
     def acceleration(pos):
         earth_mass = 5.972e24
-        gravity = -const.G * earth_mass * pos / max(np.linalg.norm(pos) ** 3, 1e-8)
+        gravity = -G * earth_mass * pos / max(np.linalg.norm(pos) ** 3, 1e-8)
         return (thrust * angle) / max(mass, 1e-8) + gravity
 
     k1_a = acceleration(position)
@@ -50,14 +52,54 @@ def rk4_t(start_position, rocket_mass, fuel_mass, angle, time, thrust, isp):
         if t < times[-1]:
             current_thrust = np.interp(t, times, values)
 
-            mdot = current_thrust / (isp * const.g)
+            mdot = current_thrust / (isp * G0)
             fuel_mass -= mdot * dt
             fuel_mass = max(fuel_mass, 0.0)
 
-        position, velocity, acceleration = rk4_next(  # noqa: RUF059
+        position, velocity, acceleration = rk4_next(
             dt, fuel_mass + rocket_mass, position, angle, velocity, current_thrust
         )
-        trajectory.append((t, np.copy(position), np.copy(velocity)))
+        trajectory.append((t, np.copy(position), np.copy(velocity), np.copy(acceleration)))
         t += dt
 
     return trajectory
+
+
+def rk4_accelerations_at_times(
+    target_times,
+    start_position,
+    rocket_mass,
+    fuel_mass,
+    angle,
+    thrust,
+    isp,
+):
+    target_times = np.asarray(target_times, dtype=np.float32)
+    original_shape = target_times.shape
+    flat_times = target_times.reshape(-1)
+
+    if flat_times.size == 0:
+        return np.empty((*original_shape, 3), dtype=np.float32)
+
+    trajectory = rk4_t(
+        start_position=start_position,
+        rocket_mass=rocket_mass,
+        fuel_mass=fuel_mass,
+        angle=angle,
+        time=float(np.max(flat_times)) + 0.02,
+        thrust=thrust,
+        isp=isp,
+    )
+
+    trajectory_times = np.array([row[0] for row in trajectory], dtype=np.float32)
+    trajectory_accelerations = np.array([row[3] for row in trajectory], dtype=np.float32)
+
+    accelerations = np.stack(
+        [
+            np.interp(flat_times, trajectory_times, trajectory_accelerations[:, axis])
+            for axis in range(3)
+        ],
+        axis=-1,
+    )
+
+    return accelerations.reshape((*original_shape, 3)).astype(np.float32)

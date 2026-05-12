@@ -173,9 +173,23 @@ def run_single_simulation(
 
         scalar_cols = [c for c in all_accels_df.columns if c.endswith("_Value")]
 
-        final_cols = (
-            ["Best_Acc_X", "Best_Acc_Y", "Best_Acc_Z", "Best_AngVel_X", "Best_AngVel_Y", "Best_AngVel_Z", *scalar_cols, "Thrust", "Mass", "Position_X", "Position_Y", "Position_Z", "Acceleration_X", "Acceleration_Y", "Acceleration_Z"]
-        )
+        final_cols = [
+            "Best_Acc_X",
+            "Best_Acc_Y",
+            "Best_Acc_Z",
+            "Best_AngVel_X",
+            "Best_AngVel_Y",
+            "Best_AngVel_Z",
+            *scalar_cols,
+            "Thrust",
+            "Mass",
+            "Position_X",
+            "Position_Y",
+            "Position_Z",
+            "Acceleration_X",
+            "Acceleration_Y",
+            "Acceleration_Z",
+        ]
 
         final_df = all_accels_df[final_cols].copy()
         final_df.ffill(inplace=True)
