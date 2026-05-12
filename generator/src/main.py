@@ -24,6 +24,7 @@ from rocketpy.stochastic import StochasticEnvironment, StochasticSolidMotor
 from single_simulation import run_single_simulation
 
 NUM_GPUS = 0
+TEST_FLAG = False
 try:
     import cupy as cp  # type: ignore
 
