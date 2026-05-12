@@ -1,19 +1,19 @@
 import argparse
-from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import torch
 import torch.optim as optim
 from GRU_model import GRU
 from pinn_physics import (
-    calculate_x_b,
     default_physics_paths,
     load_parameters,
     load_thrust_curve,
     total_loss,
 )
+
+from prediction_models.GRU.src.data_loader import make_sequences, read_flight_data, split_flights
+from prediction_models.GRU.src.train import train_model
+from prediction_models.GRU.src.visualize import plot_losses, plot_prediction
 
 # Check for current best hardware options:
 #   mps - apple gpu,
@@ -48,81 +48,6 @@ def get_best_device():
 # .parquet - all the data is read from parquet files
 
 
-def read_flight_data(
-    start_flight,
-    num_of_flights,
-    output_dir="../../../1955-1959",
-):
-    flights_inputs = []
-    flights_targets = []
-    flight_positions = []
-    flight_times = []
-
-    output_path = Path(output_dir)
-    if not output_path.is_absolute():
-        output_path = Path(__file__).resolve().parent / output_path
-
-    flight_files = sorted(output_path.glob("flight_*.parquet"))
-
-    if len(flight_files) < start_flight + num_of_flights:
-        raise ValueError(
-            f"Expected at least {start_flight + num_of_flights} flight files, found {len(flight_files)}."
-        )
-
-    for file_path in flight_files[start_flight : start_flight + num_of_flights]:
-        flight_data = pd.read_parquet(file_path)
-
-        sensor_columns = [
-            "Best_Acc_X",
-            "Best_Acc_Y",
-            "Best_Acc_Z",
-            "Best_AngVel_X",
-            "Best_AngVel_Y",
-            "Best_AngVel_Z",
-            "Barometer_Value",
-            "Sensor_Value",
-        ]
-        if not set(sensor_columns).issubset(flight_data.columns):
-            raise ValueError(f"{file_path} is missing required sensor columns: {sensor_columns}")
-        input_data = flight_data[sensor_columns].values.astype(np.float32)
-
-        target_columns = ["Acceleration_X", "Acceleration_Y", "Acceleration_Z"]
-        target_data = flight_data[target_columns].values.astype(np.float32)
-
-        position_columns = ["Position_X", "Position_Y", "Position_Z"]
-        position_data = flight_data[position_columns].values.astype(np.float32)
-
-        if "Time" in flight_data.columns:
-            time_data = flight_data["Time"].to_numpy(dtype=np.float32)
-        else:
-            time_data = flight_data.index.to_numpy(dtype=np.float32)
-
-        flights_inputs.append(input_data)
-        flights_targets.append(target_data)
-        flight_positions.append(position_data)
-        flight_times.append(time_data)
-
-    return flights_inputs, flights_targets, flight_positions, flight_times
-
-
-# Split list of flights into training and testing sets for the model
-# where split_ratio is the fraction of flights used for training
-def split_flights(flights, split_ratio=0.8):
-    split_idx = int(len(flights) * split_ratio)
-
-    train_flights = flights[:split_idx]
-    test_flights = flights[split_idx:]
-
-    return train_flights, test_flights
-
-
-# Apply normalization to each flight independently using only the statistical
-# values (mean, std) for the training dataset passed as a 1D array
-def normalize_flights(flights, array):
-    mean = array.mean(axis=0)
-    std = array.std(axis=0)
-    return [(flight - mean) / std for flight in flights]
-
 
 # Convert flight time-series data into shorter learning
 # samples for the GRU model
@@ -133,359 +58,8 @@ def normalize_flights(flights, array):
 # that the model is trained to predict
 
 
-# X shape: (num_samples, seq_len, 3)
-# y_acc shape: (num_samples, pred_len, 3)
-# y_pos shape: (num_samples, pred_len, 3)
-def estimate_velocity(positions, times):
-    velocities = np.zeros_like(positions, dtype=np.float32)
-
-    if len(positions) < 2:
-        return velocities
-
-    dt = np.diff(times).astype(np.float32)
-    dt = np.where(dt == 0.0, 1e-6, dt)
-    segment_velocity = np.diff(positions, axis=0) / dt[:, None]
-
-    velocities[0] = segment_velocity[0]
-    velocities[-1] = segment_velocity[-1]
-    if len(positions) > 2:
-        velocities[1:-1] = 0.5 * (segment_velocity[:-1] + segment_velocity[1:])
-
-    return velocities
-
-def make_sequences(flights_inputs, flights_targets, flight_positions, flight_times, seq_len, pred_len):
-    # This converts long full-flight time series into many shorter training examples
-
-    X, y_acc, y_pos, t_y, initial_pos, initial_vel, initial_time = [], [], [], [], [], [], []
-
-    # ZMIANA: iterujemy jednocześnie po f_in (wejścia) i f_tar (targety)
-    for f_in, f_tar, positions, times in zip(flights_inputs, flights_targets, flight_positions, flight_times, strict=False):
-        velocities = estimate_velocity(positions, times)
-
-        for i in range(len(f_in) - seq_len - pred_len):
-            start_idx = i + seq_len - 1
-            target_start_idx = i + seq_len
-            target_end_idx = target_start_idx + pred_len
-
-            # take seq_len values from past observations (z czujników - 8 kolumn)
-            X.append(f_in[i : i + seq_len])
-            
-            # take pred_len future values to be predicted (z przyspieszenia - 3 kolumny)
-            y_acc.append(f_tar[target_start_idx:target_end_idx])
-            
-            y_pos.append(positions[target_start_idx:target_end_idx])
-            # Store exact times for the target part
-            t_y.append(times[target_start_idx:target_end_idx])
-            initial_pos.append(positions[start_idx])
-            initial_vel.append(velocities[start_idx])
-            initial_time.append(times[start_idx])
-
-    # convert to numpy arrays
-    X = np.array(X, dtype=np.float32)
-    y_acc = np.array(y_acc, dtype=np.float32)
-    y_pos = np.array(y_pos, dtype=np.float32)
-    t_y = np.array(t_y, dtype=np.float32)
-    initial_pos = np.array(initial_pos, dtype=np.float32)
-    initial_vel = np.array(initial_vel, dtype=np.float32)
-    initial_time = np.array(initial_time, dtype=np.float32)
-
-    # convert to tensors (required for model training)
-    return (
-        torch.from_numpy(X),
-        torch.from_numpy(y_acc),
-        torch.from_numpy(y_pos),
-        torch.from_numpy(t_y),
-        torch.from_numpy(initial_pos),
-        torch.from_numpy(initial_vel),
-        torch.from_numpy(initial_time),
-    )
-
 # Train the GRU model using small-batch gradient descent
 # one training_round = one full pass over dataset
-
-
-def train_model(
-    model,
-    X_train,
-    y_train,
-    pos_train,
-    t_train,
-    initial_pos_train,
-    initial_vel_train,
-    initial_time_train,
-    X_test,
-    y_test,
-    pos_test,
-    t_test,
-    initial_pos_test,
-    initial_vel_test,
-    initial_time_test,
-    loss,
-    optimizer,
-    pred_len,
-    batch_size=64,
-    training_rounds=10,
-):
-
-    train_losses = []
-    test_losses = []
-
-    print("started training")
-
-    for training_round in range(training_rounds):
-        round_loss = 0.0  # cumulated prediction error for the whole round
-        total_samples = 0
-
-        model.train()
-
-        for i in range(0, len(X_train), batch_size):
-            # if batch_idx == cutoff_start_index:
-            #     print("cutoff start at", i)
-            #     model.change_mode()
-            # take a slice of successive input sequences
-            # starting from the current time stamp (i)
-
-            # X_batch: (batch_size, seq_len, 3)
-            # where 3 = [Acc_x, Acc_y, Acc_z]
-            # if model.get_mode() == "SpinUp":
-            X_batch = X_train[i : i + batch_size].to(device)  # batch input
-            # else:
-            # X_batch = last_pred.to(device).to(device)
-            # pos_batch shape: (batch_size, pred_len, 3)
-            # correct future simulator positions used by the PINN loss
-            y_batch = y_train[i : i + batch_size].to(device)
-            pos_batch = pos_train[i : i + batch_size].to(device)
-
-            # t_batch contains the target times matching y_batch
-            # Shape:(batch_size, pred_len)
-
-            # The PINN loss uses these times to calculate x_b(t), rebuild total
-            # acceleration, and integrate it into position.
-            t_batch = t_train[i : i + batch_size].to(device)
-            initial_pos_batch = initial_pos_train[i : i + batch_size].to(device)
-            initial_vel_batch = initial_vel_train[i : i + batch_size].to(device)
-            initial_time_batch = initial_time_train[i : i + batch_size].to(device)
-
-            # pass input sequence through GRU to get predictions for each time step
-            # outputs shape: (batch_size, seq_len, 3)
-            # outputs, _ = model(X_batch)
-            # preds = outputs[:, -pred_len:, :]  # take only the part of the sequence
-            preds, _ = model(X_batch, pred_len=pred_len)
-            # last_pred = preds.detach()
-            # that was predicted in the current iteration (so the last pred_len values)
-
-            # The GRU output is treated as predicted_x_s. The PINN loss adds x_b
-            # back, integrates total acceleration, and compares position.
-            batch_loss = loss(
-                preds,
-                y_batch,
-                pos_batch,
-                t_batch,
-                initial_pos_batch,
-                initial_vel_batch,
-                initial_time_batch,
-            )
-
-            optimizer.zero_grad()  # reset gradients from previous step
-
-            # calculate how should weights change to reduce loss (backpropagation)
-            batch_loss.backward()
-            # update weights using calculated gradients
-            optimizer.step()
-
-            round_loss += batch_loss.item()  # accumulate loss for this round
-            total_samples += len(X_batch)
-
-            # if batch_idx == cutoff_end_index:
-            #     model.change_mode()
-            #     print("cutoff end at", i)
-
-        # calcutate average loss over all training batches in this round
-        avg_loss = round_loss / total_samples
-
-        train_losses.append(avg_loss)
-
-        # calcutate average loss over all test batches in this round
-        avg_test_loss = evaluate_model(
-            model,
-            X_test,
-            y_test,
-            pos_test,
-            t_test,
-            initial_pos_test,
-            initial_vel_test,
-            initial_time_test,
-            loss,
-            batch_size,
-            pred_len,
-        )
-        test_losses.append(avg_test_loss)
-
-        print(
-            f"Iteration {training_round + 1}, train loss: {avg_loss:.8e}, test loss: {avg_test_loss:.8e}"
-        )
-
-        if (training_round + 1) % 5 == 0:
-            checkpoint_filename = f"gru_checkpoint_round_{training_round + 1}_seq{pred_len}.pth"
-            torch.save(model.state_dict(), checkpoint_filename)
-            print(f"checkpoint: {checkpoint_filename}")
-
-    return train_losses, test_losses
-
-
-# Evaluate model using test data
-def evaluate_model(
-    model,
-    X_test,
-    y_test,
-    pos_test,
-    t_test,
-    initial_pos_test,
-    initial_vel_test,
-    initial_time_test,
-    loss,
-    batch_size=64,
-    pred_len=3,
-):
-
-    model.eval()  # set the mode to evaluation mode
-    test_loss = 0.0
-    with torch.no_grad():
-        # iterate over the test dataset in smaller batches
-        for i in range(0, len(X_test), batch_size):
-            # select one batch of test inputs
-            X_batch = X_test[i : i + batch_size].to(device)
-
-            y_batch = y_test[i : i + batch_size].to(device)
-            pos_batch = pos_test[i : i + batch_size].to(device)
-
-            t_batch = t_test[i : i + batch_size].to(device)
-            initial_pos_batch = initial_pos_test[i : i + batch_size].to(device)
-            initial_vel_batch = initial_vel_test[i : i + batch_size].to(device)
-            initial_time_batch = initial_time_test[i : i + batch_size].to(device)
-
-            # # pass input sequence through GRU to get predictions for each time step
-            # outputs, _ = model(X_batch)
-            # # take only the last pred_len timesteps from the output sequence
-            # preds = outputs[:, -pred_len:, :]
-
-            # Model bezpośrednio zwraca tensor z predykcjami o długości pred_len
-            preds, _ = model(X_batch, pred_len=pred_len)
-            # compute loss between predictions and true values
-            curr_loss = loss(
-                preds,
-                y_batch,
-                pos_batch,
-                t_batch,
-                initial_pos_batch,
-                initial_vel_batch,
-                initial_time_batch,
-            )
-
-            # calculate total loss value
-            test_loss += curr_loss.item()
-
-    # return average loss over all test batches
-    return test_loss / (len(X_test) / batch_size)
-
-
-def plot_prediction(
-    model,
-    X_test,
-    y_test,
-    t_test,
-    pred_len,
-    parameters,
-    thrust_curve,
-    mean_acc,
-    std_acc,
-    sample_idx=0,
-    axis=0,
-):
-    model.eval()  # set the mode to evaluation mode
-
-    with torch.no_grad():
-        # X_test shape: (num_samples, seq_len, 3)
-        # y_test shape: (num_samples, pred_len, 3)
-
-        # select a single test sample (batch size = 1)
-        # input_seq shape = (1, seq_len, 3)
-        input_seq = X_test[sample_idx : sample_idx + 1].to(device)
-
-        # select corresponding correct future values to be predicted (targets)
-        # target shape: (pred_len, 3)
-        target = y_test[sample_idx]
-
-        target_times = t_test[sample_idx : sample_idx + 1].to(device)
-
-        # pass the input sequence through the GRU model
-        # output shape: (1, seq_len, 3)
-        # hidden state (_) is ignored
-        # output, _ = model(input_seq)
-
-        # predicted_x_s = output[:, -pred_len:, :]
-        predicted_x_s, _ = model(input_seq, pred_len=pred_len)
-        # Calculate the known physics part for the same future times
-        base_acc = calculate_x_b(target_times, parameters, thrust_curve)
-
-        # Rebuild full acceleration for plotting:
-        #   predicted_x_total = predicted_x_s + x_b
-        # This is only for human-readable visualization
-        # During training the loss compares predicted_x_s with true_x_s
-        #
-        # prediction shape after [0]:
-        #   (pred_len, 3)
-
-        predicted_x_s_denorm = predicted_x_s[0].cpu().numpy() * std_acc + mean_acc
-        target_denorm = target.cpu().numpy() * std_acc + mean_acc
-        history_denorm = X_test[sample_idx, :, :3].cpu().numpy() * std_acc + mean_acc      
-
-        base_acc = calculate_x_b(target_times, parameters, thrust_curve)[0].cpu().numpy()
-        prediction = predicted_x_s_denorm + base_acc
-        # define time axes for past (input) and future (prediction)
-        seq_len = input_seq.shape[1]  # length of input sequence
-
-        # past_time: numpy array [0, 1, ..., seq_len-1]
-        # represents time indices of the input sequence
-        past_time = np.arange(seq_len)
-        # future_time: numpy array [seq_len, ..., seq_len+pred_len-1]
-        # Represents time indices of the future (prediction)
-        future_time = np.arange(seq_len, seq_len + pred_len)
-
-        plt.figure(figsize=(10, 5))
-        axes_labels = ["X", "Y", "Z"]
-        # plot historical data used as input
-        # plot the actual future values
-    plt.plot(past_time, history_denorm[:, axis], label="Historia (Input)", color="blue", marker="o")
-    plt.plot(
-        future_time, target_denorm[:, axis], label="Prawda (Target)", color="green", marker="s"
-    )
-    plt.plot(
-        future_time, prediction[:, axis], label="Predykcja", color="red", linestyle="--", marker="x"
-    )
-    plt.title(f"Predykcja Przyspieszenia {axes_labels[axis]} (Próbka {sample_idx})")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    #       plt.show()
-    filename = f"prediction_sample_{sample_idx}.png"
-    plt.savefig(filename, bbox_inches="tight")
-    plt.close()  # Free up memory
-    print(f"Saved prediction plot to {filename}")
-
-
-def plot_losses(train_losses, test_losses):
-    plt.figure(figsize=(10, 5))
-    plt.plot(train_losses, label="Training Loss", color="blue")
-    plt.plot(test_losses, label="Testing Loss", color="orange")
-    plt.xlabel("Round")
-    plt.ylabel("Loss (MSE)")
-    plt.title("Model Progress")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    # plt.show()
-    plt.savefig("loss_progress.png", bbox_inches="tight")
-    plt.close()
-    print("Saved loss plot to loss_progress.png")
 
 
 def parse_args():
@@ -598,7 +172,7 @@ def main():
     # idk if that's good practice but it is what it is
 
     model = GRU(input_size=8, hidden_size=64, output_size=3, num_layers=2).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=0.0005)
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
     train_losses, test_losses = train_model(
         model,
@@ -618,6 +192,7 @@ def main():
         initial_time_test,
         loss,
         optimizer,
+        device=device,
         batch_size=args.batch_size,
         training_rounds=args.training_rounds,
         pred_len=pred_len,
@@ -634,6 +209,9 @@ def main():
         thrust_curve,
         mean_acc,
         std_acc,
+        mean_in,
+        std_in,
+        device,
         sample_idx=np.random.randint(0, len(X_test)),
     )
 
