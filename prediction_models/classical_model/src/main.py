@@ -45,6 +45,7 @@ def main():
         time=total_flight_time,
         thrust=thrust_dict,
         isp=isp,
+        sampling_rate=500,
     )
 
     print(f"{'time (s)':<10} {'altitude (m)':<15} {'velocity (m/s)':<15}")

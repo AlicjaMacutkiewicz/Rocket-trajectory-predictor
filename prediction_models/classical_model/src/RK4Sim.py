@@ -35,9 +35,9 @@ def rk4_next(dt, mass, position, angle, velocity, thrust):
 
 
 # liczy pozycja(t)
-def rk4_t(start_position, rocket_mass, fuel_mass, angle, time, thrust, isp):
+def rk4_t(start_position, rocket_mass, fuel_mass, angle, time, thrust, isp, sampling_rate):
     t = 0
-    dt = 0.02
+    dt = 1/sampling_rate
     position = start_position
     velocity = np.array([0, 0, 0])
     acceleration = np.array([0, 0, 0])
@@ -73,6 +73,7 @@ def rk4_accelerations_at_times(
     angle,
     thrust,
     isp,
+    sampling_rate,
 ):
     target_times = np.asarray(target_times, dtype=np.float32)
     original_shape = target_times.shape
@@ -89,6 +90,7 @@ def rk4_accelerations_at_times(
         time=float(np.max(flat_times)) + 0.02,
         thrust=thrust,
         isp=isp,
+        sampling_rate=sampling_rate,
     )
 
     trajectory_times = np.array([row[0] for row in trajectory], dtype=np.float32)
