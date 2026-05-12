@@ -26,62 +26,64 @@ def train_model(
     training_rounds=10,
     year="all"
 ):
+    """
+    Executes the training loop for the GRU model, integrating Weights & Biases for live telemetry.
+
+    Iterates through the dataset in mini-batches, computes predictions, evaluates the 
+    Physics-Informed Neural Network (PINN) loss, and performs backpropagation to update weights.
+    Saves a model checkpoint every 5 epochs.
+
+    Args:
+        model (nn.Module): The GRU neural network.
+        X_train ... initial_time_train (torch.Tensor): Training data tensors.
+        X_test ... initial_time_test (torch.Tensor): Testing data tensors.
+        loss (nn.Module): The composite PINN loss function.
+        optimizer (torch.optim.Optimizer): The optimization algorithm (e.g., Adam).
+        pred_len (int): The number of future time steps to predict.
+        device (torch.device): The hardware accelerator to use.
+        batch_size (int, optional): Number of sequences per batch. Defaults to 64.
+        training_rounds (int, optional): Total number of epochs. Defaults to 10.
+        year (str, optional): Tag for Weights & Biases logging. Defaults to "all".
+
+    Returns:
+        tuple: Two lists containing the average training and testing loss per epoch.
+    """
 
     train_losses = []
     test_losses = []
 
+    # initialize wandb session
     wandb.init(
         project="rocket-trajectory", 
         name=f"gru_seq{pred_len}_yr{year}",
         config={"batch_size": batch_size, "epochs": training_rounds, "seq_len": pred_len}
     )
-    # Automatyczne śledzenie wag i gradientów z modelu!
+
+    # automatically track model weights and gradients
     wandb.watch(model, log="all")
 
     for training_round in range(training_rounds):
-        round_loss = 0.0  # cumulated prediction error for the whole round
+        round_loss = 0.0
         total_samples = 0
 
         model.train()
 
         for i in range(0, len(X_train), batch_size):
-            # if batch_idx == cutoff_start_index:
-            #     print("cutoff start at", i)
-            #     model.change_mode()
-            # take a slice of successive input sequences
-            # starting from the current time stamp (i)
-
-            # X_batch: (batch_size, seq_len, 3)
-            # where 3 = [Acc_x, Acc_y, Acc_z]
-            # if model.get_mode() == "SpinUp":
-            X_batch = X_train[i : i + batch_size].to(device)  # batch input
-            # else:
-            # X_batch = last_pred.to(device).to(device)
-            # pos_batch shape: (batch_size, pred_len, 3)
-            # correct future simulator positions used by the PINN loss
+           
+             # Load batch slices to the active device
+            X_batch = X_train[i : i + batch_size].to(device)
             y_batch = y_train[i : i + batch_size].to(device)
             pos_batch = pos_train[i : i + batch_size].to(device)
-
-            # t_batch contains the target times matching y_batch
-            # Shape:(batch_size, pred_len)
-
-            # The PINN loss uses these times to calculate x_b(t), rebuild total
-            # acceleration, and integrate it into position.
             t_batch = t_train[i : i + batch_size].to(device)
             initial_pos_batch = initial_pos_train[i : i + batch_size].to(device)
             initial_vel_batch = initial_vel_train[i : i + batch_size].to(device)
             initial_time_batch = initial_time_train[i : i + batch_size].to(device)
 
-            # pass input sequence through GRU to get predictions for each time step
-            # outputs shape: (batch_size, seq_len, 3)
-            # outputs, _ = model(X_batch)
-            # preds = outputs[:, -pred_len:, :]  # take only the part of the sequence
+            # pass input sequence through the GRU
             preds, _ = model(X_batch, pred_len=pred_len)
-            # last_pred = preds.detach()
-            # that was predicted in the current iteration (so the last pred_len values)
-
-            # The GRU output is treated as predicted_x_s. The PINN loss adds x_b
-            # back, integrates total acceleration, and compares position.
+           
+            # GRU outputs the predicted residual (x_s)
+            # PINN loss adds base physics (x_b), integrates, and compares position
             batch_loss = loss(
                 preds,
                 y_batch,
@@ -92,27 +94,22 @@ def train_model(
                 initial_time_batch,
             )
 
-            optimizer.zero_grad()  # reset gradients from previous step
 
-            # calculate how should weights change to reduce loss (backpropagation)
+            # backpropagation
+            optimizer.zero_grad()
             batch_loss.backward()
-            # update weights using calculated gradients
             optimizer.step()
 
-            round_loss += batch_loss.item()  # accumulate loss for this round
+
+            round_loss += batch_loss.item()
             total_samples += len(X_batch)
 
-            # if batch_idx == cutoff_end_index:
-            #     model.change_mode()
-            #     print("cutoff end at", i)
-            pass
-
-        # calcutate average loss over all training batches in this round
+        
+        # calcutate average loss over all training batches in this epoch
         avg_loss = round_loss / total_samples
-
         train_losses.append(avg_loss)
 
-        # calcutate average loss over all test batches in this round
+        # calcutate average loss over all test batches in this epoch
         avg_test_loss = evaluate_model(
             model,
             X_test,
@@ -133,12 +130,14 @@ def train_model(
             f"Iteration {training_round + 1}, train loss: {avg_loss:.8e}, test loss: {avg_test_loss:.8e}"
         )
 
+        # log metrics to wandb dashboard
         wandb.log({
             "Train Loss": avg_loss,
             "Test Loss": avg_test_loss,
             "Epoch": training_round + 1
         })
     
+        # checkpoint saving
         if (training_round + 1) % 5 == 0:
             checkpoint_filename = f"gru_checkpoint_round_{training_round + 1}_seq{pred_len}.pth"
             torch.save(model.state_dict(), checkpoint_filename)
@@ -148,7 +147,6 @@ def train_model(
     return train_losses, test_losses
 
 
-# Evaluate model using test data
 def evaluate_model(
     model,
     X_test,
@@ -163,31 +161,39 @@ def evaluate_model(
     batch_size=64,
     pred_len=3,
 ):
+    """
+    Evaluates the model's performance on the test dataset without updating weights.
 
-    model.eval()  # set the mode to evaluation mode
+    Args:
+        model (nn.Module): The GRU neural network.
+        X_test ... initial_time_test (torch.Tensor): Testing data tensors.
+        loss (nn.Module): The composite PINN loss function.
+        device (torch.device): The hardware accelerator to use.
+        batch_size (int, optional): Number of sequences per batch. Defaults to 64.
+        pred_len (int, optional): The number of future time steps to predict. Defaults to 3.
+
+    Returns:
+        float: The average loss across all test batches.
+    """
+
+    model.eval()
     test_loss = 0.0
-    with torch.no_grad():
-        # iterate over the test dataset in smaller batches
-        for i in range(0, len(X_test), batch_size):
-            # select one batch of test inputs
-            X_batch = X_test[i : i + batch_size].to(device)
 
+    with torch.no_grad():
+        for i in range(0, len(X_test), batch_size):
+
+            X_batch = X_test[i : i + batch_size].to(device)
             y_batch = y_test[i : i + batch_size].to(device)
             pos_batch = pos_test[i : i + batch_size].to(device)
-
             t_batch = t_test[i : i + batch_size].to(device)
             initial_pos_batch = initial_pos_test[i : i + batch_size].to(device)
             initial_vel_batch = initial_vel_test[i : i + batch_size].to(device)
             initial_time_batch = initial_time_test[i : i + batch_size].to(device)
 
-            # # pass input sequence through GRU to get predictions for each time step
-            # outputs, _ = model(X_batch)
-            # # take only the last pred_len timesteps from the output sequence
-            # preds = outputs[:, -pred_len:, :]
-
-            # Model bezpośrednio zwraca tensor z predykcjami o długości pred_len
+            # generate predictions
             preds, _ = model(X_batch, pred_len=pred_len)
-            # compute loss between predictions and true values
+
+            # compute pinn loss
             curr_loss = loss(
                 preds,
                 y_batch,
@@ -198,10 +204,8 @@ def evaluate_model(
                 initial_time_batch,
             )
 
-            # calculate total loss value
             test_loss += curr_loss.item()
 
-    # return average loss over all test batches
     return test_loss / (len(X_test) / batch_size)
 
 

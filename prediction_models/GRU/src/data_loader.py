@@ -11,6 +11,21 @@ def read_flight_data(
     num_of_flights,
     output_dir="../../../1955-1959",
 ):
+    """
+    Loads telemetry and simulation data from Parquet files.
+
+    Separates the data into input features (sensors) and target features (accelerations)
+    for the sequence-to-sequence model, along with raw positions and times for physics integration.
+
+    Args:
+        start_flight (int): Index of the first flight file to load.
+        num_of_flights (int): Total number of flight files to process.
+        output_dir (str): Relative or absolute path to the directory containing .parquet files.
+
+    Returns:
+        tuple: Four lists of numpy arrays containing inputs, targets, positions, and timestamps.
+    """
+
     flights_inputs = []
     flights_targets = []
     flight_positions = []
@@ -24,7 +39,7 @@ def read_flight_data(
 
     if len(flight_files) < start_flight + num_of_flights:
         raise ValueError(
-            f"Expected at least {start_flight + num_of_flights} flight files, found {len(flight_files)}."
+            f"expected at least {start_flight + num_of_flights} flight files, found {len(flight_files)}."
         )
 
     for file_path in flight_files[start_flight : start_flight + num_of_flights]:
@@ -63,9 +78,17 @@ def read_flight_data(
     return flights_inputs, flights_targets, flight_positions, flight_times
 
 
-# Split list of flights into training and testing sets for the model
-# where split_ratio is the fraction of flights used for training
 def split_flights(flights, split_ratio=0.8):
+    """
+    Splits a list of flight arrays into training and testing sets.
+
+    Args:
+        flights (list): List of numpy arrays representing individual flights.
+        split_ratio (float): Fraction of the data to use for training (default: 0.8).
+
+    Returns:
+        tuple: (train_flights, test_flights)
+    """
     split_idx = int(len(flights) * split_ratio)
 
     train_flights = flights[:split_idx]
@@ -74,29 +97,48 @@ def split_flights(flights, split_ratio=0.8):
     return train_flights, test_flights
 
 
-# Apply normalization to each flight independently using only the statistical
-# values (mean, std) for the training dataset passed as a 1D array
 def normalize_flights(flights, array):
+    """
+    Applies Z-score normalization to each flight independently.
+    
+    Args:
+        flights (list): List of flight arrays to normalize.
+        array (np.ndarray): The reference array (usually training data) to calculate mean and std.
+        
+    Returns:
+        list: Normalized flight arrays.
+    """
     mean = array.mean(axis=0)
     std = array.std(axis=0)
+    std = np.where(std == 0, 1e-6, std)     # prevent division by zero
     return [(flight - mean) / std for flight in flights]
 
 
-# X shape: (num_samples, seq_len, 3)
-# y_acc shape: (num_samples, pred_len, 3)
-# y_pos shape: (num_samples, pred_len, 3)
 def estimate_velocity(positions, times):
+    """
+    Estimates velocity from positional data using numerical differentiation (central difference).
+
+    Args:
+        positions (np.ndarray): Array of shape (timesteps, 3) representing X, Y, Z positions.
+        times (np.ndarray): Array of shape (timesteps,) representing time in seconds.
+
+    Returns:
+        np.ndarray: Estimated velocities of shape (timesteps, 3).
+    """
     velocities = np.zeros_like(positions, dtype=np.float32)
 
     if len(positions) < 2:
         return velocities
 
     dt = np.diff(times).astype(np.float32)
-    dt = np.where(dt == 0.0, 1e-6, dt)
+    dt = np.where(dt == 0.0, 1e-6, dt)     # prevent division by zero
     segment_velocity = np.diff(positions, axis=0) / dt[:, None]
 
+    # edge cases
     velocities[0] = segment_velocity[0]
     velocities[-1] = segment_velocity[-1]
+
+    # internal points
     if len(positions) > 2:
         velocities[1:-1] = 0.5 * (segment_velocity[:-1] + segment_velocity[1:])
 
@@ -105,11 +147,27 @@ def estimate_velocity(positions, times):
 
 
 def make_sequences(flights_inputs, flights_targets, flight_positions, flight_times, seq_len, pred_len):
-    # This converts long full-flight time series into many shorter training examples
+    """
+    Converts full-flight time-series data into overlapping training sequences for the GRU model.
 
+    Splits the synchronized telemetry data into a historical observation window (Spin-Up) and a future 
+    prediction window (Cut-Off).
+
+    Args:
+        flights_inputs (list of np.ndarray): Sensor input data (e.g., Barometer, IMU).
+        flights_targets (list of np.ndarray): Target true accelerations from the simulator.
+        flight_positions (list of np.ndarray): True physical positions (X, Y, Z).
+        flight_times (list of np.ndarray): Timestamps for the telemetry data.
+        seq_len (int): Length of the historical input sequence (lookback window).
+        pred_len (int): Length of the future sequence to predict (forecast window).
+
+    Returns:
+        tuple: PyTorch tensors for X (inputs), y_acc (target accelerations), y_pos (target positions), 
+            t_y (target times), and initial integration conditions (pos, vel, time).
+    """
     X, y_acc, y_pos, t_y, initial_pos, initial_vel, initial_time = [], [], [], [], [], [], []
 
-    # ZMIANA: iterujemy jednocześnie po f_in (wejścia) i f_tar (targety)
+    # iterate simultaneously over inputs and targets
     for f_in, f_tar, positions, times in zip(flights_inputs, flights_targets, flight_positions, flight_times, strict=False):
         velocities = estimate_velocity(positions, times)
 
@@ -118,13 +176,13 @@ def make_sequences(flights_inputs, flights_targets, flight_positions, flight_tim
             target_start_idx = i + seq_len
             target_end_idx = target_start_idx + pred_len
 
-            # take seq_len values from past observations (z czujników - 8 kolumn)
+            # Extract seq_len values from past observations   (Sensors - 8 columns)
             X.append(f_in[i : i + seq_len])
             
-            # take pred_len future values to be predicted (z przyspieszenia - 3 kolumny)
+            # Extract pred_len future values to be predicted  (Accelerations - 3 columns)
             y_acc.append(f_tar[target_start_idx:target_end_idx])
-            
             y_pos.append(positions[target_start_idx:target_end_idx])
+
             # Store exact times for the target part
             t_y.append(times[target_start_idx:target_end_idx])
             initial_pos.append(positions[start_idx])

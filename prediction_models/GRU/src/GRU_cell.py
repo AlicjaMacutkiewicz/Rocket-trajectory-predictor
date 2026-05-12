@@ -1,54 +1,62 @@
 import math
 
-import torch as tr
-
-# note:
-# @ - matmul (matrix)
-# * - mul (element wise)
+import torch
+import torch.nn as nn
 
 
-class Gru_Cell(tr.nn.Module):
+class GRUCell(nn.Module):
+    """
+    A custom implementation of a Gated Recurrent Unit (GRU) cell.
+
+    This module manually defines the weight matrices and bias vectors 
+    required to compute the reset gate, update gate, and candidate hidden state.
+
+    Args:
+        input_size (int): The number of expected features in the input `x`.
+        hidden_size (int): The number of features in the hidden state `h`.
+    """
     def __init__(self, input_size, hidden_size):
         super().__init__()
-        # Parameters meaning:
-        # W - first weigh vector
-        # U - second weigh vector
-        # (W @ U = weigh matrix)
-        # b - bias
 
-        # Xavier initialization
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+
+        # Xavier initialization bound for weight generation
         std = 1.0 / math.sqrt(hidden_size)
 
-        # Reset gate parameters:
-        self.W_r = tr.nn.Parameter(tr.empty(input_size, hidden_size).uniform_(-std, std))
-        self.U_r = tr.nn.Parameter(tr.empty(hidden_size, hidden_size).uniform_(-std, std))
-        self.b_r = tr.nn.Parameter(tr.zeros(hidden_size))
+        # Reset gate (r) parameters: W_r (input weights), U_r (hidden weights), b_r (bias)
+        self.W_r = nn.Parameter(torch.empty(input_size, hidden_size).uniform_(-std, std))
+        self.U_r = nn.Parameter(torch.empty(hidden_size, hidden_size).uniform_(-std, std))
+        self.b_r = nn.Parameter(torch.zeros(hidden_size))
 
-        # Update gate parameters:
-        self.W_z = tr.nn.Parameter(tr.empty(input_size, hidden_size).uniform_(-std, std))
-        self.U_z = tr.nn.Parameter(tr.empty(hidden_size, hidden_size).uniform_(-std, std))
-        self.b_z = tr.nn.Parameter(tr.zeros(hidden_size))
+        # Update gate (z) parameters: W_z (input weights), U_z (hidden weights), b_z (bias)
+        self.W_z = nn.Parameter(torch.empty(input_size, hidden_size).uniform_(-std, std))
+        self.U_z = nn.Parameter(torch.empty(hidden_size, hidden_size).uniform_(-std, std))
+        self.b_z = nn.Parameter(torch.zeros(hidden_size))
 
-        # Parameters linking the two layers:
-        self.W = tr.nn.Parameter(tr.empty(input_size, hidden_size).uniform_(-std, std))
-        self.U = tr.nn.Parameter(tr.empty(hidden_size, hidden_size).uniform_(-std, std))
-        self.b = tr.nn.Parameter(tr.zeros(hidden_size))
+        # Candidate state (h') parameters: W (input weights), U (hidden weights), b (bias)
+        self.W = nn.Parameter(torch.empty(input_size, hidden_size).uniform_(-std, std))
+        self.U = nn.Parameter(torch.empty(hidden_size, hidden_size).uniform_(-std, std))
+        self.b = nn.Parameter(torch.zeros(hidden_size))
 
     def get_reset_gate(self, x, h_prev):
-        # r(t)  = sigma_function(W_r*x(t) + U_r*h(t-1) + b_r)
-        return tr.sigmoid((x @ self.W_r) + (h_prev @ self.U_r) + self.b_r)
+        """ Computes the reset gate: r(t) = sigmoid(x(t)@W_r + h(t-1)@U_r + b_r) """
+        return torch.sigmoid((x @ self.W_r) + (h_prev @ self.U_r) + self.b_r)
 
     def get_update_gate(self, x, h_prev):
-        # z(t)  = sigma_function(W_z*x(t) + U_z*h(t-1) + b_z)
-        return tr.sigmoid((x @ self.W_z) + (h_prev @ self.U_z) + self.b_z)
+        """ Computes the update gate: z(t) = sigmoid(x(t)@W_z + h(t-1)@U_z + b_z) """
+        return torch.sigmoid((x @ self.W_z) + (h_prev @ self.U_z) + self.b_z)
 
     def get_candidate_gate(self, x, h_prev):
-        # h'(t) = tanh(U*r(t)*h(t-1) + W*x(t) + b_h')
+        """ Computes the candidate hidden state: h'(t) = tanh(x(t)@W + (r(t) * h(t-1))@U + b) """
         r = self.get_reset_gate(x, h_prev)
-        return tr.tanh(((r * h_prev) @ self.U) + (x @ self.W) + self.b)
+        return torch.tanh(((r * h_prev) @ self.U) + (x @ self.W) + self.b)
 
     def forward(self, x, h_prev):
-        # h(t)  = (1-z(t))*h'(t) + h(t-1)*z(t)
+        """
+        Computes the final hidden state for the current time step.
+        h(t) = (1 - z(t)) * h'(t) + z(t) * h(t-1)
+        """
         z = self.get_update_gate(x, h_prev)
         h_c = self.get_candidate_gate(x, h_prev)
         return ((1 - z) * h_c) + (h_prev) * z

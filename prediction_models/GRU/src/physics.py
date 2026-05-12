@@ -6,75 +6,62 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+# adjust path to find the classical simulator module
 CLASSICAL_MODEL_SRC = Path(__file__).resolve().parents[2] / "classical_model" / "src"
 if str(CLASSICAL_MODEL_SRC) not in sys.path:
     sys.path.append(str(CLASSICAL_MODEL_SRC))
 
-from RK4Sim import rk4_t  # noqa: E402, I001
+from RK4Sim import rk4_t  # noqa: E402
 
-
-# helo here im trying to explain the physics part of the code which honestly i do not understand myself
-# so prepare for something crazy and proobably not entirely correct but hopefully it will be helpful for someone who is also confused like me
-# Constant gravity vector
-# Acceleration vector has three components:
-# [X acceleration, Y acceleration, Z acceleration]
-#
-# Z is the vertical axis
-# Gravity points down so only Z  is negative.
+# ---> physical constants <---
 GRAVITY = torch.tensor([0.0, 0.0, -9.81], dtype=torch.float32)
 R_EARTH = 6371000.0
 DEFAULT_FUEL_MASS = 13.04
 DEFAULT_ISP = 204.26
+
+# cache for RK4 baseline calculations to prevent redundant numerical integration
 _RK4_CACHE = {}
 
 
 def load_parameters(parameters_path):
-    # We need those values to calculate the known deterministic part
-    # of acceleration called x_b
+    """
+    Loads rocket parameters required to calculate the deterministic 
+    baseline acceleration (x_b).
+    """
     with open(parameters_path, encoding="utf-8") as file:
         return json.load(file)
 
 
 def load_thrust_curve(thrust_path):
-
-    # The file does not contain a thrust value for every possible time.
-    # Later calculate_x_b() will interpolate between these known points hi hi.
+    """
+    Loads the engine's thrust curve (Time vs. Thrust).
+    The calculate_x_b() function will later interpolate between these known points.
+    """
     curve = np.loadtxt(thrust_path, delimiter=",", dtype=np.float32)
 
-    # Defensive check Pozdro
     if curve.ndim != 2 or curve.shape[1] != 2:
-        raise ValueError("Thrust curve must have two columns: time, thrust.")
+        raise ValueError("thrust curve must have two columns: time, thrust")
     return curve
 
 
 def get_launch_direction(parameters):
-    # Thrust is a force with a direction (informacja dla bezrobotnych)
-    # The thrust curve tells us only how strongg the engine is at time t
-    # It does not tell us where the rocket points :(
-    #
-    # This function converts launch angles from parameters.json into a 3D direction vector
-    # That vector says how much of the thrust goes into X, Y and Z.
+    """
+    Converts launch angles (inclination, heading) from parameters into a 3D direction vector.
+    This vector dictates how the engine thrust is distributed across the X, Y, and Z axes.
+    """
     flight = parameters.get("flight", {})
 
-    # JSON stores angles in degrees. Numpy trigonometric functions expect radians
-    # so we convert degrees -> radians here
+    # JSON stores angles in degrees, numpy trigonometric functions expect radians
     inclination = np.deg2rad(float(flight.get("inclination", 90.0)))
     heading = np.deg2rad(float(flight.get("heading", 0.0)))
 
-    # w sumie to nie wiem czy bedziemy puszczac rakiete inaczej niz pionowo ale moze sie przyda hihi
-    # inclination = 90 degrees means fully vertical launch
-    # cos(90 deg) is 0 (zdałam Elementarną to wiem tak), so horizontal part is 0.
-    # sin(90 deg) is 1 so vertical Z part is 1.
-    # For less vertical launches horizontal becomes larger and the thrust is split between horizontal axes and vertical Z.
+   # inclination = 90 degrees implies a fully vertical launch
     horizontal = np.cos(inclination)
     return np.array(
         [
-            # X
-            horizontal * np.cos(heading),
-            # Y
-            horizontal * np.sin(heading),
-            # Z
-            np.sin(inclination),
+            horizontal * np.cos(heading),   # X
+            horizontal * np.sin(heading),   # Y
+            np.sin(inclination),            # Z
         ],
         dtype=np.float32,
     )
@@ -85,6 +72,7 @@ def _thrust_curve_to_dict(thrust_curve):
 
 
 def _rk4_cache_key(parameters, thrust_curve):
+    """Generates a unique hash key for the RK4 cache based on initial conditions."""
     rocket = parameters.get("rocket", {})
     motors = parameters.get("motors", {})
     stored_results = parameters.get("stored_results", {})
@@ -107,6 +95,7 @@ def _rk4_cache_key(parameters, thrust_curve):
 
 
 def _get_rk4_tables(parameters, thrust_curve):
+    """Executes the classical RK4 simulator and caches the resulting baseline trajectory."""
     cache_key = _rk4_cache_key(parameters, thrust_curve)
     cached = _RK4_CACHE.get(cache_key)
     if cached is not None:
@@ -184,7 +173,13 @@ def calculate_position(
     parameters,
     thrust_curve,
 ):
+    """
+    Returns base acceleration (x_b) calculated by the classical RK4 model.
 
+    In this hybrid architecture, total acceleration is split: x_total = x_b + x_s.
+    The deterministic physics (gravity, engine thrust) are handled here, allowing 
+    the neural network to focus entirely on predicting the nonlinear residuals (x_s).
+    """
     if not torch.is_tensor(times):
         times = torch.as_tensor(
             times,
@@ -207,64 +202,32 @@ def calculate_position(
 
 
 class BaseAccelerationMSELoss(nn.Module):
-    # Here everything comes togheter
-    #
-    # It is still a normal MSE loss but it compares the network output
-    # against the nonlinear acceleration x_s not against the full x_total
+    """
+    Computes the Mean Squared Error against the nonlinear acceleration residual.
 
-    # Formula:
-    #   true_x_s = true_x_total - x_b
-    #   MSE_acc = MSE(predicted_x_s, true_x_s)
-    #
-    # The network output is interpreted as predicted_x_s
-    # That means the network is learning only what the simple physics model
-    # does not explain
+    Since the GRU is tasked with predicting only the residual (x_s), the target is 
+    derived by subtracting the classical baseline (x_b) from the simulator's total output.
+    """
     def __init__(self, parameters, thrust_curve):
         super().__init__()
-
-        # Store physical data needed to calculate x_b every time loss is called
         self.parameters = parameters
         self.thrust_curve = thrust_curve
-
-        # Standard PyTorch mean squared error:
-        #   mean((prediction - target) ** 2)
         self.mse = nn.MSELoss()
 
     def forward(self, predicted_x_s, true_x_total, times):
-        # Step 1:
-        # Calculate known/base acceleration at the exact target times
-        # x_b shape should match true_x_total:
-        #   (batch_size, pred_len, 3)
+        # calculate known/base acceleration at the exact target times
         x_b = calculate_x_b(times, self.parameters, self.thrust_curve)
 
-        # Step 2:
-        # The simulator gives us total acceleration as the target for training
-        # But the network is supposed to output only the nonlinear part x_s
-        # So we subtract the known base part from the total:
-        #
-        #   true_x_s = true_x_total - x_b
-        #
-        # This is the target for the GRUUUUU
-        # we only use the first 3 columns of the true_x_total as we only want
-        # to take the acceleration data into consideration
+       # isolate the target residual: true_x_s = total_acceleration - base_physics
         true_x_s = true_x_total[:, :, :3] - x_b
 
-        # Step 3:
-        # Compare what the network predicted with the residual target
-        #
-        # FYI: if this value is small we good
+       # compare network prediction with the residual target
         return self.mse(predicted_x_s, true_x_s)
 
 
 def integrate_acceleration(acceleration, times, initial_position, initial_velocity, initial_time):
     """
-    Here we go again with the love for physics and newton kinematics :)
-    Integrate acceleration into velocity and position with Newton kinematics
-
-    acceleration shape: (batch_size, pred_len, 3)
-    times shape: (batch_size, pred_len)
-    initial_position / initial_velocity shape: (batch_size, 3)
-    initial_time shape: (batch_size,)
+    Numerically integrates acceleration into velocity and position using Newtonian kinematics.
     """
     if not torch.is_tensor(times):
         times = torch.as_tensor(times, dtype=torch.float32)
@@ -281,6 +244,7 @@ def integrate_acceleration(acceleration, times, initial_position, initial_veloci
         dt = (current_time - previous_time).clamp_min(0.0).unsqueeze(-1)
         current_acceleration = acceleration[:, step, :]
 
+        # standard kinematic equations
         position = position + (velocity * dt) + (0.5 * current_acceleration * dt * dt)
         velocity = velocity + (current_acceleration * dt)
 
@@ -291,10 +255,13 @@ def integrate_acceleration(acceleration, times, initial_position, initial_veloci
 
 
 class PINNPositionMSELoss(nn.Module):
-    # PINN loss for the GRU residual model:
-    #   1. rebuild total acceleration: predicted_x_total = predicted_x_s + x_b
-    #   2. integrate that acceleration into velocity and position
-    #   3. compare integrated position with simulator position
+    """
+    Physics-Informed Neural Network (PINN) Loss component.
+
+    Reconstructs the total acceleration (GRU output + RK4 baseline) and integrates 
+    it via Newtonian kinematics. Penalizes the network if the resulting simulated 
+    trajectory drifts from the true simulator position.
+    """
     def __init__(self, parameters, thrust_curve):
         super().__init__()
         self.parameters = parameters
@@ -324,8 +291,13 @@ class PINNPositionMSELoss(nn.Module):
         return self.mse(integrated_position, true_position)
 
 
-# Integrate the base mse function with calculated pinn_loss
-class total_loss(nn.Module):
+class TotalLoss(nn.Module):
+    """
+    Composite loss function balancing basic residual MSE and PINN kinematic constraints.
+
+    Args:
+        lambda_h (float): Hyperparameter controlling the strictness of physical constraints.
+    """
     def __init__(
         self, parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos, lambda_h=1e-6
     ):
@@ -352,10 +324,6 @@ class total_loss(nn.Module):
     ):
 
         # Denormalise accelerations and positions as values used to calculate pinn loss
-        # are not normalized
-
-        # everything now is nicely denormalized  :)
-
         device = preds.device
         denormalized_preds = preds * self.std_acc.to(device) + self.mean_acc.to(device)
         denormalized_acc_target = acc_batch[:, :, :3] * self.std_acc.to(device) + self.mean_acc.to(
@@ -369,6 +337,7 @@ class total_loss(nn.Module):
         denorm_initial_pos = initial_pos_batch * self.std_pos.to(device) + self.mean_pos.to(device)
         denorm_initial_vel = initial_vel_batch * self.std_pos.to(device)
 
+        # calculate isolated losses
         pinn = self.pinn_loss(
             denormalized_preds,
             denormalized_pos_target,
@@ -379,11 +348,14 @@ class total_loss(nn.Module):
         )
 
         mse_acc = self.acc_loss(denormalized_preds, denormalized_acc_target, t_batch)
+
+        # Return weighted sum
         return mse_acc + self.lambda_h * pinn
 
 
 def default_physics_paths():
-
+    """Retrieves absolute paths for default physics configurations."""
+    
     root = Path(__file__).resolve().parents[3]
     model_root = root / "source_model" / "R7_SIMLE" / "R7_OUTPUT"
 
