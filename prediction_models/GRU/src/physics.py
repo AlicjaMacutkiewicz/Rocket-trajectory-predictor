@@ -94,7 +94,7 @@ def _rk4_cache_key(parameters, thrust_curve):
     )
 
 
-def _get_rk4_tables(parameters, thrust_curve):
+def _get_rk4_tables(parameters, thrust_curve, sampling_rate):
     """Executes the classical RK4 simulator and caches the resulting baseline trajectory."""
     cache_key = _rk4_cache_key(parameters, thrust_curve)
     cached = _RK4_CACHE.get(cache_key)
@@ -118,6 +118,7 @@ def _get_rk4_tables(parameters, thrust_curve):
         time=flight_time,
         thrust=_thrust_curve_to_dict(thrust_curve),
         isp=isp,
+        sampling_rate=sampling_rate,
     )
 
     rk4_times = np.array([row[0] for row in trajectory], dtype=np.float32)
@@ -129,7 +130,7 @@ def _get_rk4_tables(parameters, thrust_curve):
     return _RK4_CACHE[cache_key]
 
 
-def calculate_x_b(times, parameters, thrust_curve):
+def calculate_x_b(times, parameters, thrust_curve, sampling_rate):
     """Return base acceleration x_b(t) from the RK4 baseline model.
 
     x_b - base acceleration
@@ -156,7 +157,7 @@ def calculate_x_b(times, parameters, thrust_curve):
     device = times.device
     dtype = times.dtype
 
-    rk4_times, _, _, rk4_accelerations = _get_rk4_tables(parameters, thrust_curve)
+    rk4_times, _, _, rk4_accelerations = _get_rk4_tables(parameters, thrust_curve, sampling_rate)
     flat_times = times.detach().cpu().numpy().reshape(-1)
 
     x_b = np.stack(
@@ -172,6 +173,7 @@ def calculate_position(
     times,
     parameters,
     thrust_curve,
+    sampling_rate,
 ):
     """
     Returns base acceleration (x_b) calculated by the classical RK4 model.
@@ -189,7 +191,7 @@ def calculate_position(
     device = times.device
     dtype = times.dtype
 
-    rk4_times, rk4_positions, _, _ = _get_rk4_tables(parameters, thrust_curve)
+    rk4_times, rk4_positions, _, _ = _get_rk4_tables(parameters, thrust_curve, sampling_rate)
     flat_times = times.detach().cpu().numpy().reshape(-1)
 
     positions = np.stack(
@@ -208,15 +210,16 @@ class BaseAccelerationMSELoss(nn.Module):
     Since the GRU is tasked with predicting only the residual (x_s), the target is 
     derived by subtracting the classical baseline (x_b) from the simulator's total output.
     """
-    def __init__(self, parameters, thrust_curve):
+    def __init__(self, parameters, thrust_curve, sampling_rate):
         super().__init__()
         self.parameters = parameters
         self.thrust_curve = thrust_curve
         self.mse = nn.MSELoss()
+        self.sampling_rate = sampling_rate
 
     def forward(self, predicted_x_s, true_x_total, times):
         # calculate known/base acceleration at the exact target times
-        x_b = calculate_x_b(times, self.parameters, self.thrust_curve)
+        x_b = calculate_x_b(times, self.parameters, self.thrust_curve, self.sampling_rate)
 
        # isolate the target residual: true_x_s = total_acceleration - base_physics
         true_x_s = true_x_total[:, :, :3] - x_b
@@ -262,11 +265,12 @@ class PINNPositionMSELoss(nn.Module):
     it via Newtonian kinematics. Penalizes the network if the resulting simulated 
     trajectory drifts from the true simulator position.
     """
-    def __init__(self, parameters, thrust_curve):
+    def __init__(self, parameters, thrust_curve, sampling_rate):
         super().__init__()
         self.parameters = parameters
         self.thrust_curve = thrust_curve
         self.mse = nn.MSELoss()
+        self.sampling_rate = sampling_rate
 
     def forward(
         self,
@@ -277,7 +281,7 @@ class PINNPositionMSELoss(nn.Module):
         initial_velocity,
         initial_time,
     ):
-        x_b = calculate_x_b(times, self.parameters, self.thrust_curve)
+        x_b = calculate_x_b(times, self.parameters, self.thrust_curve, self.sampling_rate)
         predicted_x_total = predicted_x_s + x_b
 
         integrated_position, _ = integrate_acceleration(
@@ -299,11 +303,11 @@ class TotalLoss(nn.Module):
         lambda_h (float): Hyperparameter controlling the strictness of physical constraints.
     """
     def __init__(
-        self, parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos, lambda_h=1e-6
+        self, parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos, sampling_rate, lambda_h=1e-6,
     ):
         super().__init__()
-        self.acc_loss = BaseAccelerationMSELoss(parameters, thrust_curve)
-        self.pinn_loss = PINNPositionMSELoss(parameters, thrust_curve)
+        self.acc_loss = BaseAccelerationMSELoss(parameters, thrust_curve, sampling_rate)
+        self.pinn_loss = PINNPositionMSELoss(parameters, thrust_curve, sampling_rate)
 
         self.mean_acc = torch.tensor(mean_acc, dtype=torch.float32)
         self.std_acc = torch.tensor(std_acc, dtype=torch.float32)

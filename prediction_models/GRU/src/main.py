@@ -47,6 +47,7 @@ def main():
     args = parse_args()
     device = get_best_device()
 
+    sampling_rate = 500.0/args.downsample
     # pred_len is set equal to seq_len so the model predicts
     # the same number of future samples as it receives from the past
     pred_len = args.seq_len
@@ -94,7 +95,7 @@ def main():
     test_positions = [(p - mean_pos) / std_pos for p in test_positions]
 
     # sequence generation
-    loss = TotalLoss(parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos).to(device)
+    loss = TotalLoss(parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos, sampling_rate).to(device)
     (
         X_train,
         y_train,
@@ -164,6 +165,7 @@ def main():
         mean_in,
         std_in,
         device,
+        sampling_rate=sampling_rate,
         sample_idx=np.random.randint(0, len(X_test)),
     )
 

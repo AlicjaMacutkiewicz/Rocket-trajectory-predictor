@@ -18,6 +18,7 @@ def plot_prediction(
     mean_in,
     std_in,
     device,
+    sampling_rate,
     sample_idx=0,
     axis=0,
 ):
@@ -64,7 +65,7 @@ def plot_prediction(
         history_denorm = X_test[sample_idx, :, :3].cpu().numpy() * std_in[:3] + mean_in[:3]
 
         # calculate and add the known physics baseline (x_b)
-        base_acc = calculate_x_b(target_times, parameters, thrust_curve)[0].cpu().numpy()
+        base_acc = calculate_x_b(target_times, parameters, thrust_curve, sampling_rate)[0].cpu().numpy()
         prediction = predicted_x_s_denorm + base_acc
 
     # define time axes for past (input) and future (prediction)
