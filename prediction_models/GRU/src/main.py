@@ -37,6 +37,8 @@ def parse_args():
     parser.add_argument("--training-rounds", type=int, default=10)
     parser.add_argument("--seq-len", type=int, default=40)
     parser.add_argument("--year", type=str, default="2025")
+    parser.add_argument("--downsample", type=int, default=50)
+    parser.add_argument("--resume-from", type=str, default=None)
 
     return parser.parse_args()
 
@@ -56,7 +58,7 @@ def main():
 
     # load flight data
     flights_inputs, flights_targets, flight_positions, flight_times = read_flight_data(
-        args.start_flight, args.num_flights, output_dir=args.output_dir
+        args.start_flight, args.num_flights, output_dir=args.output_dir, downsample=args.downsample
     )
 
     # train / test data split
@@ -116,6 +118,11 @@ def main():
 
     # model init and training
     model = GRU(input_size=8, hidden_size=64, output_size=3, num_layers=2).to(device)
+
+    if args.resume_from:
+        print(f"resuming training from checkpoint: {args.resume_from}")
+        model.load_state_dict(torch.load(args.resume_from, map_location=device))
+            
     optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
     train_losses, test_losses = train_model(

@@ -1,4 +1,5 @@
 
+import random
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +11,7 @@ def read_flight_data(
     start_flight,
     num_of_flights,
     output_dir="../../../1955-1959",
+    downsample=1
 ):
     """
     Loads telemetry and simulation data from Parquet files.
@@ -57,18 +59,18 @@ def read_flight_data(
         ]
         if not set(sensor_columns).issubset(flight_data.columns):
             raise ValueError(f"{file_path} is missing required sensor columns: {sensor_columns}")
-        input_data = flight_data[sensor_columns].values.astype(np.float32)
+        input_data = flight_data[sensor_columns].values.astype(np.float32)[::downsample]
 
         target_columns = ["Acceleration_X", "Acceleration_Y", "Acceleration_Z"]
-        target_data = flight_data[target_columns].values.astype(np.float32)
+        target_data = flight_data[target_columns].values.astype(np.float32)[::downsample]
 
         position_columns = ["Position_X", "Position_Y", "Position_Z"]
-        position_data = flight_data[position_columns].values.astype(np.float32)
+        position_data = flight_data[position_columns].values.astype(np.float32)[::downsample]
 
         if "Time" in flight_data.columns:
-            time_data = flight_data["Time"].to_numpy(dtype=np.float32)
+            time_data = flight_data["Time"].to_numpy(dtype=np.float32)[::downsample]
         else:
-            time_data = flight_data.index.to_numpy(dtype=np.float32)
+            time_data = flight_data.index.to_numpy(dtype=np.float32)[::downsample]
 
         flights_inputs.append(input_data)
         flights_targets.append(target_data)
@@ -78,7 +80,7 @@ def read_flight_data(
     return flights_inputs, flights_targets, flight_positions, flight_times
 
 
-def split_flights(flights, split_ratio=0.8):
+def split_flights(flights, split_ratio=0.8, seed=41):
     """
     Splits a list of flight arrays into training and testing sets.
 
@@ -89,6 +91,12 @@ def split_flights(flights, split_ratio=0.8):
     Returns:
         tuple: (train_flights, test_flights)
     """
+    random.seed(seed)
+    
+    num_flights = len(flights)
+    indices = list(range(num_flights))
+    
+    random.shuffle(indices)
     split_idx = int(len(flights) * split_ratio)
 
     train_flights = flights[:split_idx]
