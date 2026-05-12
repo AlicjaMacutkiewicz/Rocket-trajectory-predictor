@@ -122,4 +122,7 @@ testing_data/
 training_data/
 source_data/
 generated_flights.txt
-stan_uczenia.txt
+learning_state.txt
+wandb/
+loss_progress.*
+prediction_sample_*

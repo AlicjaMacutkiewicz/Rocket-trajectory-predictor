@@ -3,17 +3,11 @@ import argparse
 import numpy as np
 import torch
 import torch.optim as optim
+from data_loader import make_sequences, read_flight_data, split_flights
 from GRU_model import GRU
-
-from prediction_models.GRU.src.data_loader import make_sequences, read_flight_data, split_flights
-from prediction_models.GRU.src.physics import (
-    TotalLoss,
-    default_physics_paths,
-    load_parameters,
-    load_thrust_curve,
-)
-from prediction_models.GRU.src.train import train_model
-from prediction_models.GRU.src.visualize import plot_losses, plot_prediction
+from physics import TotalLoss, default_physics_paths, load_parameters, load_thrust_curve
+from train import train_model
+from visualize import plot_losses, plot_prediction
 
 
 def get_best_device():
