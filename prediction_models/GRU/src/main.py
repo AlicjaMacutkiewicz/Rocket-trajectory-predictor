@@ -173,23 +173,7 @@ def main():
     )
 
     # visualization and saving
-    plot_losses(train_losses, test_losses)
-    plot_prediction(
-        model,
-        X_test,
-        y_test,
-        t_test,
-        pred_len,
-        parameters,
-        thrust_curve,
-        mean_acc,
-        std_acc,
-        mean_in,
-        std_in,
-        device,
-        sampling_rate=sampling_rate,
-        sample_idx=np.random.randint(0, len(X_test)),
-    )
+    
 
     model_filename = f"gru_model_rounds{args.training_rounds}_seq{args.seq_len}.pth"
     torch.save(model.state_dict(), model_filename)
@@ -204,6 +188,24 @@ def main():
         log_file.write("-" * 40 + "\n")
     print("learning_state.txt updated")
 
+    model_to_save = model.module if isinstance(model, torch.nn.DataParallel) else model
+    plot_losses(train_losses, test_losses)
+    plot_prediction(
+        model_to_save,
+        X_test,
+        y_test,
+        t_test,
+        pred_len,
+        parameters,
+        thrust_curve,
+        mean_acc,
+        std_acc,
+        mean_in,
+        std_in,
+        device,
+        sampling_rate=sampling_rate,
+        sample_idx=np.random.randint(0, len(X_test)),
+    )
 
 if __name__ == "__main__":
     main()
