@@ -173,7 +173,7 @@ def make_sequences(flights_inputs, flights_targets, flight_positions, flight_tim
         tuple: PyTorch tensors for X (inputs), y_acc (target accelerations), y_pos (target positions), 
             t_y (target times), and initial integration conditions (pos, vel, time).
     """
-    X, y_acc, y_pos, t_y, initial_pos, initial_vel, initial_time = [], [], [], [], [], [], []
+    X, y_hist_acc, y_acc, y_pos, t_y, initial_pos, initial_vel, initial_time = [], [], [], [], [], [], [], []
 
     # iterate simultaneously over inputs and targets
     for f_in, f_tar, positions, times in zip(flights_inputs, flights_targets, flight_positions, flight_times, strict=False):
@@ -186,6 +186,9 @@ def make_sequences(flights_inputs, flights_targets, flight_positions, flight_tim
 
             # Extract seq_len values from past observations   (Sensors - 8 columns)
             X.append(f_in[i : i + seq_len])
+
+            # Keep the matching past true accelerations for visualization only.
+            y_hist_acc.append(f_tar[i : i + seq_len])
             
             # Extract pred_len future values to be predicted  (Accelerations - 3 columns)
             y_acc.append(f_tar[target_start_idx:target_end_idx])
@@ -199,6 +202,7 @@ def make_sequences(flights_inputs, flights_targets, flight_positions, flight_tim
 
     # convert to numpy arrays
     X = np.array(X, dtype=np.float32)
+    y_hist_acc = np.array(y_hist_acc, dtype=np.float32)
     y_acc = np.array(y_acc, dtype=np.float32)
     y_pos = np.array(y_pos, dtype=np.float32)
     t_y = np.array(t_y, dtype=np.float32)
@@ -209,6 +213,7 @@ def make_sequences(flights_inputs, flights_targets, flight_positions, flight_tim
     # convert to tensors (required for model training)
     return (
         torch.from_numpy(X),
+        torch.from_numpy(y_hist_acc),
         torch.from_numpy(y_acc),
         torch.from_numpy(y_pos),
         torch.from_numpy(t_y),

@@ -103,6 +103,7 @@ def main():
     loss = TotalLoss(parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos, sampling_rate).to(device)
     (
         X_train,
+        y_hist_train,
         y_train,
         pos_train,
         t_train,
@@ -112,6 +113,7 @@ def main():
     ) = make_sequences(train_inputs, train_targets, train_positions, train_times, args.seq_len, pred_len)
     (
         X_test,
+        y_hist_test,
         y_test,
         pos_test,
         t_test,
@@ -122,13 +124,13 @@ def main():
 
     print("data preprocessing and sequence generation complete")
 
-    X_train, y_train, pos_train, t_train, initial_pos_train, initial_vel_train, initial_time_train = drop_last(
-        [X_train, y_train, pos_train, t_train, initial_pos_train, initial_vel_train, initial_time_train], 
+    X_train, y_hist_train, y_train, pos_train, t_train, initial_pos_train, initial_vel_train, initial_time_train = drop_last(
+        [X_train, y_hist_train, y_train, pos_train, t_train, initial_pos_train, initial_vel_train, initial_time_train], 
         args.batch_size
     )
 
-    X_test, y_test, pos_test, t_test, initial_pos_test, initial_vel_test, initial_time_test = drop_last(
-        [X_test, y_test, pos_test, t_test, initial_pos_test, initial_vel_test, initial_time_test], 
+    X_test, y_hist_test, y_test, pos_test, t_test, initial_pos_test, initial_vel_test, initial_time_test = drop_last(
+        [X_test, y_hist_test, y_test, pos_test, t_test, initial_pos_test, initial_vel_test, initial_time_test], 
         args.batch_size
     )
     
@@ -193,6 +195,7 @@ def main():
     plot_prediction(
         model_to_save,
         X_test,
+        y_hist_test,
         y_test,
         t_test,
         pred_len,
@@ -200,8 +203,6 @@ def main():
         thrust_curve,
         mean_acc,
         std_acc,
-        mean_in,
-        std_in,
         device,
         sampling_rate=sampling_rate,
         sample_idx=np.random.randint(0, len(X_test)),
