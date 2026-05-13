@@ -30,14 +30,14 @@ def parse_args():
     """Parses command-line arguments for training configuration."""
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--output-dir", default="../../../1955-1959")
+    parser.add_argument("--output-dir", default="../../../../data")
     parser.add_argument("--start-flight", type=int, default=0)
-    parser.add_argument("--num-flights", type=int, default=24)
-    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--num-flights", type=int, default=1652)
+    parser.add_argument("--batch-size", type=int, default=1280)
     parser.add_argument("--training-rounds", type=int, default=10)
-    parser.add_argument("--seq-len", type=int, default=40)
+    parser.add_argument("--seq-len", type=int, default=200)
     parser.add_argument("--year", type=str, default="2025")
-    parser.add_argument("--downsample", type=int, default=50)
+    parser.add_argument("--downsample", type=int, default=25)
     parser.add_argument("--resume-from", type=str, default=None)
 
     return parser.parse_args()
@@ -118,13 +118,20 @@ def main():
     print("data preprocessing and sequence generation complete")
 
     # model init and training
-    model = GRU(input_size=8, hidden_size=64, output_size=3, num_layers=2).to(device)
+    model = GRU(input_size=8, hidden_size=256, output_size=3, num_layers=2)
 
     if args.resume_from:
         print(f"resuming training from checkpoint: {args.resume_from}")
         model.load_state_dict(torch.load(args.resume_from, map_location=device))
             
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+
+    if torch.cuda.device_count() > 1:
+        print(f"found {torch.cuda.device_count()} GPUs")
+        model = torch.nn.DataParallel(model)
+
+    model = model.to(device)
+
+    optimizer = optim.Adam(model.parameters(), lr=0.0005)
 
     train_losses, test_losses = train_model(
         model,
