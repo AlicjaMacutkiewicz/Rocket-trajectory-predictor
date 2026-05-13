@@ -8,6 +8,7 @@ from physics import calculate_x_b
 def plot_prediction(
     model,
     X_test,
+    y_hist_test,
     y_test,
     t_test,
     pred_len,
@@ -15,8 +16,6 @@ def plot_prediction(
     thrust_curve,
     mean_acc,
     std_acc,
-    mean_in,
-    std_in,
     device,
     sampling_rate,
     sample_idx=0,
@@ -39,8 +38,6 @@ def plot_prediction(
         thrust_curve (np.ndarray): Engine thrust data.
         mean_acc (np.ndarray): Mean values for acceleration denormalization.
         std_acc (np.ndarray): Standard deviation for acceleration denormalization.
-        mean_in (np.ndarray): Mean values for sensor input denormalization.
-        std_in (np.ndarray): Standard deviation for sensor input denormalization.
         device (torch.device): The hardware accelerator to use.
         sample_idx (int, optional): Index of the test sample to visualize. Defaults to 0.
         axis (int, optional): Spatial axis to plot (0=X, 1=Y, 2=Z). Defaults to 0.
@@ -61,8 +58,8 @@ def plot_prediction(
         predicted_x_s_denorm = predicted_x_s[0].cpu().numpy() * std_acc + mean_acc
         target_denorm = target.cpu().numpy() * std_acc + mean_acc
 
-        # denormalize historical inputs (using only the first 3 columns for acceleration plotting)
-        history_denorm = X_test[sample_idx, :, :3].cpu().numpy() * std_in[:3] + mean_in[:3]
+        # denormalize historical target accelerations, so history/target/prediction share one scale.
+        history_denorm = y_hist_test[sample_idx].cpu().numpy() * std_acc + mean_acc
 
         # calculate and add the known physics baseline (x_b)
         base_acc = calculate_x_b(target_times, parameters, thrust_curve, sampling_rate)[0].cpu().numpy()
@@ -77,7 +74,7 @@ def plot_prediction(
     plt.figure(figsize=(10, 5))
     axes_labels = ["X", "Y", "Z"]
 
-    plt.plot(past_time, history_denorm[:, axis], label="History (Input)", color="blue", marker="o")
+    plt.plot(past_time, history_denorm[:, axis], label="History (Target)", color="blue", marker="o")
     plt.plot(
         future_time, target_denorm[:, axis], label="Ground Truth (Target)", color="green", marker="s"
     )
