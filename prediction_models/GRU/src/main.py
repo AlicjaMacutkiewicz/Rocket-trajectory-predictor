@@ -137,8 +137,15 @@ def main():
 
     if args.resume_from:
         print(f"resuming training from checkpoint: {args.resume_from}")
-        model.load_state_dict(torch.load(args.resume_from, map_location=device))
-            
+        state_dict = torch.load(args.resume_from, map_location=device)
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            if k.startswith('module.'):  # noqa: SIM108
+                name = k[7:] 
+            else:
+                name = k
+            new_state_dict[name] = v
+        model.load_state_dict(new_state_dict)
 
     if torch.cuda.device_count() > 1:
         print(f"found {torch.cuda.device_count()} GPUs")
