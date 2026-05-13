@@ -42,6 +42,11 @@ def parse_args():
 
     return parser.parse_args()
 
+def drop_last(tensors, batch_size):
+    remainder = len(tensors[0]) % batch_size
+    if remainder != 0:
+        return [t[:-remainder] for t in tensors]
+    return tensors
 
 def main():
     args = parse_args()
@@ -117,6 +122,16 @@ def main():
 
     print("data preprocessing and sequence generation complete")
 
+    X_train, y_train, pos_train, t_train, initial_pos_train, initial_vel_train, initial_time_train = drop_last(
+        [X_train, y_train, pos_train, t_train, initial_pos_train, initial_vel_train, initial_time_train], 
+        args.batch_size
+    )
+
+    X_test, y_test, pos_test, t_test, initial_pos_test, initial_vel_test, initial_time_test = drop_last(
+        [X_test, y_test, pos_test, t_test, initial_pos_test, initial_vel_test, initial_time_test], 
+        args.batch_size
+    )
+    
     # model init and training
     model = GRU(input_size=8, hidden_size=256, output_size=3, num_layers=2)
 
