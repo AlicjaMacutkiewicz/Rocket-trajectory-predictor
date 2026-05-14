@@ -99,8 +99,11 @@ def split_flights(flights, split_ratio=0.8, seed=41):
     random.shuffle(indices)
     split_idx = int(len(flights) * split_ratio)
 
-    train_flights = flights[:split_idx]
-    test_flights = flights[split_idx:]
+    train_indices = indices[:split_idx]
+    test_indices = indices[split_idx:]
+
+    train_flights = [flights[i] for i in train_indices]
+    test_flights = [flights[i] for i in test_indices]
 
     return train_flights, test_flights
 

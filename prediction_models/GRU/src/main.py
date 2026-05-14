@@ -199,21 +199,31 @@ def main():
 
     model_to_save = model.module if isinstance(model, torch.nn.DataParallel) else model
     plot_losses(train_losses, test_losses)
-    plot_prediction(
-        model_to_save,
-        X_test,
-        y_hist_test,
-        y_test,
-        t_test,
-        pred_len,
-        parameters,
-        thrust_curve,
-        mean_acc,
-        std_acc,
-        device,
-        sampling_rate=sampling_rate,
-        sample_idx=np.random.randint(0, len(X_test)),
+    diagnostic_sample_indices = sorted(
+        set(
+            [
+                0,
+                len(X_test) // 2,
+                len(X_test) - 1,
+            ]
+        )
     )
+    for sample_idx in diagnostic_sample_indices:
+        plot_prediction(
+            model_to_save,
+            X_test,
+            y_hist_test,
+            y_test,
+            t_test,
+            pred_len,
+            parameters,
+            thrust_curve,
+            mean_acc,
+            std_acc,
+            device,
+            sampling_rate=sampling_rate,
+            sample_idx=sample_idx,
+        )
 
 if __name__ == "__main__":
     main()

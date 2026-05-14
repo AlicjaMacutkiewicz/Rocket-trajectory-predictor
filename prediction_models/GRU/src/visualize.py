@@ -5,6 +5,22 @@ from matplotlib import pyplot as plt
 from physics import calculate_x_b
 
 
+def _axis_metrics(prediction, target, axis):
+    error = prediction[:, axis] - target[:, axis]
+    return {
+        "mae": np.mean(np.abs(error)),
+        "rmse": np.sqrt(np.mean(error ** 2)),
+        "bias": np.mean(error),
+    }
+
+
+def _format_metrics(name, metrics):
+    return (
+        f"{name}: MAE={metrics['mae']:.4g}, "
+        f"RMSE={metrics['rmse']:.4g}, Bias={metrics['bias']:.4g}"
+    )
+
+
 def plot_prediction(
     model,
     X_test,
@@ -20,6 +36,7 @@ def plot_prediction(
     sampling_rate,
     sample_idx=0,
     axis=0,
+    filename_prefix="prediction_sample",
 ):
     """
     Generates and saves a plot comparing the model's trajectory prediction against the ground truth.
@@ -64,6 +81,12 @@ def plot_prediction(
         # calculate and add the known physics baseline (x_b)
         base_acc = calculate_x_b(target_times, parameters, thrust_curve, sampling_rate)[0].cpu().numpy()
         prediction = predicted_x_s_denorm + base_acc
+        rk4_baseline = base_acc
+        last_value_baseline = np.repeat(history_denorm[-1:, :3], pred_len, axis=0)
+        residual_target = target_denorm - base_acc
+        gru_metrics = _axis_metrics(prediction, target_denorm, axis)
+        rk4_metrics = _axis_metrics(rk4_baseline, target_denorm, axis)
+        last_value_metrics = _axis_metrics(last_value_baseline, target_denorm, axis)
 
     # define time axes for past (input) and future (prediction)
     seq_len = input_seq.shape[1]
@@ -81,14 +104,60 @@ def plot_prediction(
     plt.plot(
         future_time, prediction[:, axis], label="Prediction", color="red", linestyle="--", marker="x"
     )
-    plt.title(f"{axes_labels[axis]}-Axis Acceleration Prediction (Sample {sample_idx})")
+    plt.plot(
+        future_time,
+        rk4_baseline[:, axis],
+        label="RK4 Baseline",
+        color="purple",
+        linestyle=":",
+    )
+    plt.plot(
+        future_time,
+        last_value_baseline[:, axis],
+        label="Last-Value Baseline",
+        color="gray",
+        linestyle="-.",
+    )
+    plt.title(
+        f"{axes_labels[axis]}-Axis Acceleration Prediction (Sample {sample_idx}) "
+        f"| GRU RMSE={gru_metrics['rmse']:.4g}"
+    )
     plt.legend()
     plt.grid(True, alpha=0.3)
 
-    filename = f"prediction_sample_{sample_idx}.png"
+    filename = f"{filename_prefix}_{sample_idx}_axis{axis}.png"
     plt.savefig(filename, bbox_inches="tight")
     plt.close()
     print(f"Saved prediction plot to {filename}")
+    print(_format_metrics("GRU", gru_metrics))
+    print(_format_metrics("RK4 baseline", rk4_metrics))
+    print(_format_metrics("Last-value baseline", last_value_metrics))
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(
+        future_time,
+        residual_target[:, axis],
+        label="Ground Truth Residual",
+        color="green",
+        marker="s",
+    )
+    plt.plot(
+        future_time,
+        predicted_x_s_denorm[:, axis],
+        label="Predicted Residual",
+        color="red",
+        linestyle="--",
+        marker="x",
+    )
+    plt.axhline(0.0, color="black", linewidth=1, alpha=0.3)
+    plt.title(f"{axes_labels[axis]}-Axis Residual Prediction (Sample {sample_idx})")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    residual_filename = f"{filename_prefix}_residual_{sample_idx}_axis{axis}.png"
+    plt.savefig(residual_filename, bbox_inches="tight")
+    plt.close()
+    print(f"Saved residual prediction plot to {residual_filename}")
 
 
 def plot_losses(train_losses, test_losses):
@@ -98,8 +167,9 @@ def plot_losses(train_losses, test_losses):
     plt.figure(figsize=(10, 5))
     plt.plot(train_losses, label="Training Loss", color="blue")
     plt.plot(test_losses, label="Testing Loss", color="orange")
+    plt.yscale("log")
     plt.xlabel("Round")
-    plt.ylabel("Loss (MSE)")
+    plt.ylabel("Loss (MSE, log scale)")
     plt.title("Model Progress")
     plt.legend()
     plt.grid(True, alpha=0.3)

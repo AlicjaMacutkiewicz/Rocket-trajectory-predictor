@@ -51,6 +51,7 @@ def train_model(
 
     train_losses = []
     test_losses = []
+    best_test_loss = float("inf")
 
     # initialize wandb session
     wandb.init(
@@ -101,8 +102,9 @@ def train_model(
             optimizer.step()
 
 
-            round_loss += batch_loss.item()
-            total_samples += len(X_batch)
+            batch_samples = len(X_batch)
+            round_loss += batch_loss.item() * batch_samples
+            total_samples += batch_samples
 
         
         # calcutate average loss over all training batches in this epoch
@@ -143,6 +145,15 @@ def train_model(
             torch.save(model.state_dict(), checkpoint_filename)
             print(f"checkpoint: {checkpoint_filename}")
 
+        if avg_test_loss < best_test_loss:
+            best_test_loss = avg_test_loss
+            best_checkpoint_filename = f"best_gru_model_seq{pred_len}.pth"
+            torch.save(model.state_dict(), best_checkpoint_filename)
+            print(
+                f"best checkpoint: {best_checkpoint_filename} "
+                f"(test loss: {best_test_loss:.8e})"
+            )
+
     wandb.finish()
     return train_losses, test_losses
 
@@ -178,6 +189,7 @@ def evaluate_model(
 
     model.eval()
     test_loss = 0.0
+    total_samples = 0
 
     with torch.no_grad():
         for i in range(0, len(X_test), batch_size):
@@ -204,8 +216,10 @@ def evaluate_model(
                 initial_time_batch,
             )
 
-            test_loss += curr_loss.item()
+            batch_samples = len(X_batch)
+            test_loss += curr_loss.item() * batch_samples
+            total_samples += batch_samples
 
-    return test_loss / (len(X_test) / batch_size)
+    return test_loss / total_samples
 
 

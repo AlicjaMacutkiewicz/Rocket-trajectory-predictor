@@ -218,14 +218,20 @@ class BaseAccelerationMSELoss(nn.Module):
         self.sampling_rate = sampling_rate
 
     def forward(self, predicted_x_s, true_x_total, times):
-        # calculate known/base acceleration at the exact target times
-        x_b = calculate_x_b(times, self.parameters, self.thrust_curve, self.sampling_rate)
-
-       # isolate the target residual: true_x_s = total_acceleration - base_physics
-        true_x_s = true_x_total[:, :, :3] - x_b
-
-       # compare network prediction with the residual target
+        true_x_s = calculate_residual_target(
+            true_x_total,
+            times,
+            self.parameters,
+            self.thrust_curve,
+            self.sampling_rate,
+        )
         return self.mse(predicted_x_s, true_x_s)
+
+
+def calculate_residual_target(true_x_total, times, parameters, thrust_curve, sampling_rate):
+    """Return the residual target learned by GRU: x_s = x_total - x_b."""
+    x_b = calculate_x_b(times, parameters, thrust_curve, sampling_rate)
+    return true_x_total[:, :, :3] - x_b
 
 
 def integrate_acceleration(acceleration, times, initial_position, initial_velocity, initial_time):
