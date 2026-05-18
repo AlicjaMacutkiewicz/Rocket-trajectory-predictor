@@ -18,12 +18,13 @@ class GRU(nn.Module):
         output_size (int): Number of predicted output features.
         num_layers (int): Number of recurrent layers.
     """
-    def __init__(self, input_size, hidden_size, output_size, num_layers=1):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1, dropout=0.0):
         super().__init__()
 
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.output_size = output_size
+        self.dropout = nn.Dropout(p=dropout)
 
         internal_input_size = input_size + 1            # adding the mode flag as a layer
         self.layers = nn.ModuleList()                   # keeping the layers ar torch's ModuleList
@@ -57,6 +58,9 @@ class GRU(nn.Module):
                 h[layer] = self.layers[layer](current_input, h[layer])
                 current_input = h[layer]
 
+                if layer < self.num_layers - 1:         # apply dropout between layers, but not after the last recurrent layer
+                    current_input = self.dropout(current_input)
+
         outputs = []                                    # getting the array for the outpu
         decoder_input = x[:, -1, :]                     # decoder input - last point from the encoder
         
@@ -67,6 +71,9 @@ class GRU(nn.Module):
                                                         # applying the forward on the layers
                 h[layer] = self.layers[layer](current_input, h[layer])
                 current_input = h[layer]                # saving the last step
+
+                if layer < self.num_layers - 1:         # apply dropout between layers, but not after the last recurrent layer
+                    current_input = self.dropout(current_input)
 
             y = self.fc(current_input)                  # going back in width to the output layer
             outputs.append(y)                           # saving the state

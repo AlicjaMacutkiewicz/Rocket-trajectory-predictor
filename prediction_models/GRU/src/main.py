@@ -100,7 +100,7 @@ def main():
     test_positions = [(p - mean_pos) / std_pos for p in test_positions]
 
     # sequence generation
-    loss = TotalLoss(parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos, sampling_rate).to(device)
+    loss = TotalLoss(parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos, sampling_rate, lambda_h=0.5).to(device)
     (
         X_train,
         y_hist_train,
@@ -135,7 +135,7 @@ def main():
     )
     
     # model init and training
-    model = GRU(input_size=8, hidden_size=256, output_size=3, num_layers=2)
+    model = GRU(input_size=8, hidden_size=64, output_size=3, num_layers=2, dropout=0.2)
 
     if args.resume_from:
         print(f"resuming training from checkpoint: {args.resume_from}")
@@ -155,7 +155,7 @@ def main():
 
     model = model.to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=0.0005)
+    optimizer = optim.Adam(model.parameters(), lr=0.0005,  weight_decay=1e-5)
 
     train_losses, test_losses = train_model(
         model,
@@ -200,13 +200,11 @@ def main():
     model_to_save = model.module if isinstance(model, torch.nn.DataParallel) else model
     plot_losses(train_losses, test_losses)
     diagnostic_sample_indices = sorted(
-        set(
-            [
+        {
                 0,
                 len(X_test) // 2,
                 len(X_test) - 1,
-            ]
-        )
+            }
     )
     for sample_idx in diagnostic_sample_indices:
         plot_prediction(
