@@ -34,11 +34,11 @@ GRU TODO:
                 (uwaga: sieć musi być w stanie zoptymalizować Total_Loss – autograd/backpropagation
                  musi przejść bez problemu przez operację całkowania)
 
-    > od nowa nakarmić tym sieć
-    > porównać wyniki poprzedniej wersji do aktualnej, tyle że teraz x = x_s + x_b a wtedy było x = x_s (caly wynik z sieci)
+    ☑ > od nowa nakarmić tym sieć
+    ☑ > porównać wyniki poprzedniej wersji do aktualnej, tyle że teraz x = x_s + x_b a wtedy było x = x_s (caly wynik z sieci)
         (średnia wartość f. straty, jakiś wykresik)
 
-- spróbować zaimplementować sieć działającą w dwóch trybach 
+- spróbować zaimplementować sieć działającą w dwóch trybach  ☑
     1. tryb dostrajania (Spin-Up) - sieć działa na realnym wejsciu z czujników
     2. tryb przewidywania (Cut-off) - sieć zapętla swoje wyjście na kolejne wejście
 
@@ -52,7 +52,7 @@ GRU TODO:
     > porównać wyniki poprzednich wersji do aktualnej (średnia wartość f. straty, jakiś wykresik)
 
 
-    DODATKOWO:
+    DODATKOWO: ☑
     > dodać opcje zapisu stanu modelu
     > dodać opcje wyboru dat i doszkolenia modelu na tej podstawie (najlepiej z poziomu terminala)
         (np z danego roku - wywolanie z argumenem np "2023")
@@ -76,7 +76,7 @@ GRU TODO:
         przed wrzuceniem danych do PyTorcha (wygenerowanie stałych tablic dla prędkości, przyspieszenia 
         i pozycji w każdym kroku)
         
-    -> Całkowanie w PINN Loss (Błąd pozycji) : - próbowałam ale wtedy mse wywaliło w kosmos ale moze cos zle robilam
+    ☑ Całkowanie w PINN Loss (Błąd pozycji) : - próbowałam ale wtedy mse wywaliło w kosmos ale moze cos zle robilam
         Zamiana metody liczenia estymowanej pozycji w funkcji straty. 
         Zamiast liczyć całą fizykę od nowa, PyTorch ma tylko wycałkować małe poprawki 
         z GRU i dodać je do twardych danych z RK4: 
