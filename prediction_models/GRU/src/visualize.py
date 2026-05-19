@@ -1,4 +1,3 @@
-
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
@@ -9,15 +8,14 @@ def _axis_metrics(prediction, target, axis):
     error = prediction[:, axis] - target[:, axis]
     return {
         "mae": np.mean(np.abs(error)),
-        "rmse": np.sqrt(np.mean(error ** 2)),
+        "rmse": np.sqrt(np.mean(error**2)),
         "bias": np.mean(error),
     }
 
 
 def _format_metrics(name, metrics):
     return (
-        f"{name}: MAE={metrics['mae']:.4g}, "
-        f"RMSE={metrics['rmse']:.4g}, Bias={metrics['bias']:.4g}"
+        f"{name}: MAE={metrics['mae']:.4g}, RMSE={metrics['rmse']:.4g}, Bias={metrics['bias']:.4g}"
     )
 
 
@@ -41,8 +39,8 @@ def plot_prediction(
     """
     Generates and saves a plot comparing the model's trajectory prediction against the ground truth.
 
-    This function extracts a single sequence, passes it through the GRU to predict the 
-    nonlinear acceleration residual, adds back the deterministic RK4 baseline (x_b), 
+    This function extracts a single sequence, passes it through the GRU to predict the
+    nonlinear acceleration residual, adds back the deterministic RK4 baseline (x_b),
     and plots the fully reconstructed physical acceleration.
 
     Args:
@@ -68,7 +66,7 @@ def plot_prediction(
         target = y_test[sample_idx]
         target_times = t_test[sample_idx : sample_idx + 1].to(device)
 
-       # forward pass through the GRU to get the predicted residual (x_s)
+        # forward pass through the GRU to get the predicted residual (x_s)
         predicted_x_s, _ = model(input_seq, pred_len=pred_len)
 
         # denormalize network predictions and targets
@@ -79,7 +77,9 @@ def plot_prediction(
         history_denorm = y_hist_test[sample_idx].cpu().numpy() * std_acc + mean_acc
 
         # calculate and add the known physics baseline (x_b)
-        base_acc = calculate_x_b(target_times, parameters, thrust_curve, sampling_rate)[0].cpu().numpy()
+        base_acc = (
+            calculate_x_b(target_times, parameters, thrust_curve, sampling_rate)[0].cpu().numpy()
+        )
         prediction = predicted_x_s_denorm + base_acc
         rk4_baseline = base_acc
         last_value_baseline = np.repeat(history_denorm[-1:, :3], pred_len, axis=0)
@@ -99,10 +99,19 @@ def plot_prediction(
 
     plt.plot(past_time, history_denorm[:, axis], label="History (Target)", color="blue", marker="o")
     plt.plot(
-        future_time, target_denorm[:, axis], label="Ground Truth (Target)", color="green", marker="s"
+        future_time,
+        target_denorm[:, axis],
+        label="Ground Truth (Target)",
+        color="green",
+        marker="s",
     )
     plt.plot(
-        future_time, prediction[:, axis], label="Prediction", color="red", linestyle="--", marker="x"
+        future_time,
+        prediction[:, axis],
+        label="Prediction",
+        color="red",
+        linestyle="--",
+        marker="x",
     )
     plt.plot(
         future_time,

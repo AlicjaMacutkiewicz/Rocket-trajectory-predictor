@@ -1,4 +1,3 @@
-
 import random
 from pathlib import Path
 
@@ -7,12 +6,7 @@ import pandas as pd
 import torch
 
 
-def read_flight_data(
-    start_flight,
-    num_of_flights,
-    output_dir="../../../1955-1959",
-    downsample=1
-):
+def read_flight_data(start_flight, num_of_flights, output_dir="../../../1955-1959", downsample=1):
     """
     Loads telemetry and simulation data from Parquet files.
 
@@ -92,10 +86,10 @@ def split_flights(flights, split_ratio=0.8, seed=41):
         tuple: (train_flights, test_flights)
     """
     random.seed(seed)
-    
+
     num_flights = len(flights)
     indices = list(range(num_flights))
-    
+
     random.shuffle(indices)
     split_idx = int(len(flights) * split_ratio)
 
@@ -111,17 +105,17 @@ def split_flights(flights, split_ratio=0.8, seed=41):
 def normalize_flights(flights, array):
     """
     Applies Z-score normalization to each flight independently.
-    
+
     Args:
         flights (list): List of flight arrays to normalize.
         array (np.ndarray): The reference array (usually training data) to calculate mean and std.
-        
+
     Returns:
         list: Normalized flight arrays.
     """
     mean = array.mean(axis=0)
     std = array.std(axis=0)
-    std = np.where(std == 0, 1e-6, std)     # prevent division by zero
+    std = np.where(std == 0, 1e-6, std)  # prevent division by zero
     return [(flight - mean) / std for flight in flights]
 
 
@@ -142,7 +136,7 @@ def estimate_velocity(positions, times):
         return velocities
 
     dt = np.diff(times).astype(np.float32)
-    dt = np.where(dt == 0.0, 1e-6, dt)     # prevent division by zero
+    dt = np.where(dt == 0.0, 1e-6, dt)  # prevent division by zero
     segment_velocity = np.diff(positions, axis=0) / dt[:, None]
 
     # edge cases
@@ -156,12 +150,13 @@ def estimate_velocity(positions, times):
     return velocities
 
 
-
-def make_sequences(flights_inputs, flights_targets, flight_positions, flight_times, seq_len, pred_len):
+def make_sequences(
+    flights_inputs, flights_targets, flight_positions, flight_times, seq_len, pred_len
+):
     """
     Converts full-flight time-series data into overlapping training sequences for the GRU model.
 
-    Splits the synchronized telemetry data into a historical observation window (Spin-Up) and a future 
+    Splits the synchronized telemetry data into a historical observation window (Spin-Up) and a future
     prediction window (Cut-Off).
 
     Args:
@@ -173,13 +168,24 @@ def make_sequences(flights_inputs, flights_targets, flight_positions, flight_tim
         pred_len (int): Length of the future sequence to predict (forecast window).
 
     Returns:
-        tuple: PyTorch tensors for X (inputs), y_acc (target accelerations), y_pos (target positions), 
+        tuple: PyTorch tensors for X (inputs), y_acc (target accelerations), y_pos (target positions),
             t_y (target times), and initial integration conditions (pos, vel, time).
     """
-    X, y_hist_acc, y_acc, y_pos, t_y, initial_pos, initial_vel, initial_time = [], [], [], [], [], [], [], []
+    X, y_hist_acc, y_acc, y_pos, t_y, initial_pos, initial_vel, initial_time = (
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
 
     # iterate simultaneously over inputs and targets
-    for f_in, f_tar, positions, times in zip(flights_inputs, flights_targets, flight_positions, flight_times, strict=False):
+    for f_in, f_tar, positions, times in zip(
+        flights_inputs, flights_targets, flight_positions, flight_times, strict=False
+    ):
         velocities = estimate_velocity(positions, times)
 
         for i in range(len(f_in) - seq_len - pred_len):
@@ -192,7 +198,7 @@ def make_sequences(flights_inputs, flights_targets, flight_positions, flight_tim
 
             # Keep the matching past true accelerations for visualization only.
             y_hist_acc.append(f_tar[i : i + seq_len])
-            
+
             # Extract pred_len future values to be predicted  (Accelerations - 3 columns)
             y_acc.append(f_tar[target_start_idx:target_end_idx])
             y_pos.append(positions[target_start_idx:target_end_idx])

@@ -25,7 +25,7 @@ _RK4_CACHE = {}
 
 def load_parameters(parameters_path):
     """
-    Loads rocket parameters required to calculate the deterministic 
+    Loads rocket parameters required to calculate the deterministic
     baseline acceleration (x_b).
     """
     with open(parameters_path, encoding="utf-8") as file:
@@ -55,13 +55,13 @@ def get_launch_direction(parameters):
     inclination = np.deg2rad(float(flight.get("inclination", 90.0)))
     heading = np.deg2rad(float(flight.get("heading", 0.0)))
 
-   # inclination = 90 degrees implies a fully vertical launch
+    # inclination = 90 degrees implies a fully vertical launch
     horizontal = np.cos(inclination)
     return np.array(
         [
-            horizontal * np.cos(heading),   # X
-            horizontal * np.sin(heading),   # Y
-            np.sin(inclination),            # Z
+            horizontal * np.cos(heading),  # X
+            horizontal * np.sin(heading),  # Y
+            np.sin(inclination),  # Z
         ],
         dtype=np.float32,
     )
@@ -179,7 +179,7 @@ def calculate_position(
     Returns base acceleration (x_b) calculated by the classical RK4 model.
 
     In this hybrid architecture, total acceleration is split: x_total = x_b + x_s.
-    The deterministic physics (gravity, engine thrust) are handled here, allowing 
+    The deterministic physics (gravity, engine thrust) are handled here, allowing
     the neural network to focus entirely on predicting the nonlinear residuals (x_s).
     """
     if not torch.is_tensor(times):
@@ -207,9 +207,10 @@ class BaseAccelerationMSELoss(nn.Module):
     """
     Computes the Mean Squared Error against the nonlinear acceleration residual.
 
-    Since the GRU is tasked with predicting only the residual (x_s), the target is 
+    Since the GRU is tasked with predicting only the residual (x_s), the target is
     derived by subtracting the classical baseline (x_b) from the simulator's total output.
     """
+
     def __init__(self, parameters, thrust_curve, sampling_rate):
         super().__init__()
         self.parameters = parameters
@@ -267,10 +268,11 @@ class PINNPositionMSELoss(nn.Module):
     """
     Physics-Informed Neural Network (PINN) Loss component.
 
-    Reconstructs the total acceleration (GRU output + RK4 baseline) and integrates 
-    it via Newtonian kinematics. Penalizes the network if the resulting simulated 
+    Reconstructs the total acceleration (GRU output + RK4 baseline) and integrates
+    it via Newtonian kinematics. Penalizes the network if the resulting simulated
     trajectory drifts from the true simulator position.
     """
+
     def __init__(self, parameters, thrust_curve, sampling_rate):
         super().__init__()
         self.parameters = parameters
@@ -308,8 +310,17 @@ class TotalLoss(nn.Module):
     Args:
         lambda_h (float): Hyperparameter controlling the strictness of physical constraints.
     """
+
     def __init__(
-        self, parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos, sampling_rate, lambda_h=1e-6,
+        self,
+        parameters,
+        thrust_curve,
+        mean_acc,
+        std_acc,
+        mean_pos,
+        std_pos,
+        sampling_rate,
+        lambda_h=1e-6,
     ):
         super().__init__()
         self.acc_loss = BaseAccelerationMSELoss(parameters, thrust_curve, sampling_rate)
@@ -365,7 +376,7 @@ class TotalLoss(nn.Module):
 
 def default_physics_paths():
     """Retrieves absolute paths for default physics configurations."""
-    
+
     root = Path(__file__).resolve().parents[3]
     model_root = root / "source_model" / "R7_SIMLE" / "R7_OUTPUT"
 

@@ -19,12 +19,14 @@ def get_best_device():
     else:
         try:
             import intel_extension_for_pytorch  # type: ignore # noqa: F401
+
             dev = torch.device("xpu") if torch.xpu.is_available() else torch.device("cpu")
         except ImportError:
             dev = torch.device("cpu")
 
     print(f"running on {dev}")
     return dev
+
 
 def parse_args():
     """Parses command-line arguments for training configuration."""
@@ -42,17 +44,19 @@ def parse_args():
 
     return parser.parse_args()
 
+
 def drop_last(tensors, batch_size):
     remainder = len(tensors[0]) % batch_size
     if remainder != 0:
         return [t[:-remainder] for t in tensors]
     return tensors
 
+
 def main():
     args = parse_args()
     device = get_best_device()
 
-    sampling_rate = 500.0/args.downsample
+    sampling_rate = 500.0 / args.downsample
     # pred_len is set equal to seq_len so the model predicts
     # the same number of future samples as it receives from the past
     pred_len = args.seq_len
@@ -77,7 +81,7 @@ def main():
     all_train_inputs = np.concatenate(train_inputs, axis=0)
     mean_in = all_train_inputs.mean(axis=0)
     std_in = all_train_inputs.std(axis=0)
-    std_in = np.where(std_in == 0, 1e-6, std_in) # div by zero safeguard
+    std_in = np.where(std_in == 0, 1e-6, std_in)  # div by zero safeguard
 
     all_train_targets = np.concatenate(train_targets, axis=0)
     mean_acc = all_train_targets.mean(axis=0)
@@ -92,7 +96,7 @@ def main():
     # apply normalization
     train_inputs = [(f - mean_in) / std_in for f in train_inputs]
     test_inputs = [(f - mean_in) / std_in for f in test_inputs]
-    
+
     train_targets = [(f - mean_acc) / std_acc for f in train_targets]
     test_targets = [(f - mean_acc) / std_acc for f in test_targets]
 
@@ -100,7 +104,9 @@ def main():
     test_positions = [(p - mean_pos) / std_pos for p in test_positions]
 
     # sequence generation
-    loss = TotalLoss(parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos, sampling_rate, lambda_h=0.5).to(device)
+    loss = TotalLoss(
+        parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos, sampling_rate, lambda_h=0.5
+    ).to(device)
     (
         X_train,
         y_hist_train,
@@ -110,7 +116,9 @@ def main():
         initial_pos_train,
         initial_vel_train,
         initial_time_train,
-    ) = make_sequences(train_inputs, train_targets, train_positions, train_times, args.seq_len, pred_len)
+    ) = make_sequences(
+        train_inputs, train_targets, train_positions, train_times, args.seq_len, pred_len
+    )
     (
         X_test,
         y_hist_test,
@@ -120,20 +128,58 @@ def main():
         initial_pos_test,
         initial_vel_test,
         initial_time_test,
-    ) = make_sequences(test_inputs, test_targets, test_positions, test_times, args.seq_len, pred_len)
+    ) = make_sequences(
+        test_inputs, test_targets, test_positions, test_times, args.seq_len, pred_len
+    )
 
     print("data preprocessing and sequence generation complete")
 
-    X_train, y_hist_train, y_train, pos_train, t_train, initial_pos_train, initial_vel_train, initial_time_train = drop_last(
-        [X_train, y_hist_train, y_train, pos_train, t_train, initial_pos_train, initial_vel_train, initial_time_train], 
-        args.batch_size
+    (
+        X_train,
+        y_hist_train,
+        y_train,
+        pos_train,
+        t_train,
+        initial_pos_train,
+        initial_vel_train,
+        initial_time_train,
+    ) = drop_last(
+        [
+            X_train,
+            y_hist_train,
+            y_train,
+            pos_train,
+            t_train,
+            initial_pos_train,
+            initial_vel_train,
+            initial_time_train,
+        ],
+        args.batch_size,
     )
 
-    X_test, y_hist_test, y_test, pos_test, t_test, initial_pos_test, initial_vel_test, initial_time_test = drop_last(
-        [X_test, y_hist_test, y_test, pos_test, t_test, initial_pos_test, initial_vel_test, initial_time_test], 
-        args.batch_size
+    (
+        X_test,
+        y_hist_test,
+        y_test,
+        pos_test,
+        t_test,
+        initial_pos_test,
+        initial_vel_test,
+        initial_time_test,
+    ) = drop_last(
+        [
+            X_test,
+            y_hist_test,
+            y_test,
+            pos_test,
+            t_test,
+            initial_pos_test,
+            initial_vel_test,
+            initial_time_test,
+        ],
+        args.batch_size,
     )
-    
+
     # model init and training
     model = GRU(input_size=8, hidden_size=64, output_size=3, num_layers=2, dropout=0.2)
 
@@ -142,8 +188,8 @@ def main():
         state_dict = torch.load(args.resume_from, map_location=device)
         new_state_dict = {}
         for k, v in state_dict.items():
-            if k.startswith('module.'):  # noqa: SIM108
-                name = k[7:] 
+            if k.startswith("module."):  # noqa: SIM108
+                name = k[7:]
             else:
                 name = k
             new_state_dict[name] = v
@@ -155,7 +201,7 @@ def main():
 
     model = model.to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=0.0005,  weight_decay=1e-5)
+    optimizer = optim.Adam(model.parameters(), lr=0.00001, weight_decay=1e-5)
 
     train_losses, test_losses = train_model(
         model,
@@ -182,7 +228,6 @@ def main():
     )
 
     # visualization and saving
-    
 
     model_filename = f"gru_model_rounds{args.training_rounds}_seq{args.seq_len}.pth"
     torch.save(model.state_dict(), model_filename)
@@ -201,10 +246,10 @@ def main():
     plot_losses(train_losses, test_losses)
     diagnostic_sample_indices = sorted(
         {
-                0,
-                len(X_test) // 2,
-                len(X_test) - 1,
-            }
+            0,
+            len(X_test) // 2,
+            len(X_test) - 1,
+        }
     )
     for sample_idx in diagnostic_sample_indices:
         plot_prediction(
@@ -222,6 +267,7 @@ def main():
             sampling_rate=sampling_rate,
             sample_idx=sample_idx,
         )
+
 
 if __name__ == "__main__":
     main()

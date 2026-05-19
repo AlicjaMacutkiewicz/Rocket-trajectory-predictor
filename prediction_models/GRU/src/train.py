@@ -24,12 +24,12 @@ def train_model(
     device,
     batch_size=64,
     training_rounds=10,
-    year="all"
+    year="all",
 ):
     """
     Executes the training loop for the GRU model, integrating Weights & Biases for live telemetry.
 
-    Iterates through the dataset in mini-batches, computes predictions, evaluates the 
+    Iterates through the dataset in mini-batches, computes predictions, evaluates the
     Physics-Informed Neural Network (PINN) loss, and performs backpropagation to update weights.
     Saves a model checkpoint every 5 epochs.
 
@@ -55,16 +55,16 @@ def train_model(
 
     # initialize wandb session
     wandb.init(
-        project="rocket-trajectory", 
+        project="rocket-trajectory",
         name=f"gru_seq{pred_len}_yr{year}",
-        config={"batch_size": batch_size, "epochs": training_rounds, "seq_len": pred_len}
+        config={"batch_size": batch_size, "epochs": training_rounds, "seq_len": pred_len},
     )
 
     # automatically track model weights and gradients
     wandb.watch(model, log="all")
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=5
+        optimizer, mode="min", factor=0.5, patience=5
     )
 
     for training_round in range(training_rounds):
@@ -74,8 +74,7 @@ def train_model(
         model.train()
 
         for i in range(0, len(X_train), batch_size):
-           
-             # Load batch slices to the active device
+            # Load batch slices to the active device
             X_batch = X_train[i : i + batch_size].to(device)
             y_batch = y_train[i : i + batch_size].to(device)
             pos_batch = pos_train[i : i + batch_size].to(device)
@@ -86,7 +85,7 @@ def train_model(
 
             # pass input sequence through the GRU
             preds, _ = model(X_batch, pred_len=pred_len)
-           
+
             # GRU outputs the predicted residual (x_s)
             # PINN loss adds base physics (x_b), integrates, and compares position
             batch_loss = loss(
@@ -99,19 +98,16 @@ def train_model(
                 initial_time_batch,
             )
 
-
             # backpropagation
             optimizer.zero_grad()
             batch_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
-
             batch_samples = len(X_batch)
             round_loss += batch_loss.item() * batch_samples
             total_samples += batch_samples
 
-        
         # calcutate average loss over all training batches in this epoch
         avg_loss = round_loss / total_samples
         train_losses.append(avg_loss)
@@ -141,14 +137,16 @@ def train_model(
         scheduler.step(avg_test_loss)
 
         # log metrics to wandb dashboard
-        current_lr = optimizer.param_groups[0]['lr']
-        wandb.log({
-            "Train Loss": avg_loss,
-            "Test Loss": avg_test_loss,
-            "Learning Rate": current_lr,
-            "Epoch": training_round + 1
-        })
-    
+        current_lr = optimizer.param_groups[0]["lr"]
+        wandb.log(
+            {
+                "Train Loss": avg_loss,
+                "Test Loss": avg_test_loss,
+                "Learning Rate": current_lr,
+                "Epoch": training_round + 1,
+            }
+        )
+
         # checkpoint saving
         if (training_round + 1) % 5 == 0:
             checkpoint_filename = f"gru_checkpoint_round_{training_round + 1}_seq{pred_len}.pth"
@@ -159,10 +157,7 @@ def train_model(
             best_test_loss = avg_test_loss
             best_checkpoint_filename = f"best_gru_model_seq{pred_len}.pth"
             torch.save(model.state_dict(), best_checkpoint_filename)
-            print(
-                f"best checkpoint: {best_checkpoint_filename} "
-                f"(test loss: {best_test_loss:.8e})"
-            )
+            print(f"best checkpoint: {best_checkpoint_filename} (test loss: {best_test_loss:.8e})")
 
     wandb.finish()
     return train_losses, test_losses
@@ -203,7 +198,6 @@ def evaluate_model(
 
     with torch.no_grad():
         for i in range(0, len(X_test), batch_size):
-
             X_batch = X_test[i : i + batch_size].to(device)
             y_batch = y_test[i : i + batch_size].to(device)
             pos_batch = pos_test[i : i + batch_size].to(device)
@@ -231,5 +225,3 @@ def evaluate_model(
             total_samples += batch_samples
 
     return test_loss / total_samples
-
-

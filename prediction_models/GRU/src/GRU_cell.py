@@ -8,13 +8,14 @@ class GRUCell(nn.Module):
     """
     A custom implementation of a Gated Recurrent Unit (GRU) cell.
 
-    This module manually defines the weight matrices and bias vectors 
+    This module manually defines the weight matrices and bias vectors
     required to compute the reset gate, update gate, and candidate hidden state.
 
     Args:
         input_size (int): The number of expected features in the input `x`.
         hidden_size (int): The number of features in the hidden state `h`.
     """
+
     def __init__(self, input_size, hidden_size):
         super().__init__()
 
@@ -40,15 +41,15 @@ class GRUCell(nn.Module):
         self.b = nn.Parameter(torch.zeros(hidden_size))
 
     def get_reset_gate(self, x, h_prev):
-        """ Computes the reset gate: r(t) = sigmoid(x(t)@W_r + h(t-1)@U_r + b_r) """
+        """Computes the reset gate: r(t) = sigmoid(x(t)@W_r + h(t-1)@U_r + b_r)"""
         return torch.sigmoid((x @ self.W_r) + (h_prev @ self.U_r) + self.b_r)
 
     def get_update_gate(self, x, h_prev):
-        """ Computes the update gate: z(t) = sigmoid(x(t)@W_z + h(t-1)@U_z + b_z) """
+        """Computes the update gate: z(t) = sigmoid(x(t)@W_z + h(t-1)@U_z + b_z)"""
         return torch.sigmoid((x @ self.W_z) + (h_prev @ self.U_z) + self.b_z)
 
     def get_candidate_gate(self, x, h_prev):
-        """ Computes the candidate hidden state: h'(t) = tanh(x(t)@W + (r(t) * h(t-1))@U + b) """
+        """Computes the candidate hidden state: h'(t) = tanh(x(t)@W + (r(t) * h(t-1))@U + b)"""
         r = self.get_reset_gate(x, h_prev)
         return torch.tanh(((r * h_prev) @ self.U) + (x @ self.W) + self.b)
 
