@@ -63,6 +63,10 @@ def train_model(
     # automatically track model weights and gradients
     wandb.watch(model, log="all")
 
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=5, verbose=True
+    )
+
     for training_round in range(training_rounds):
         round_loss = 0.0
         total_samples = 0
@@ -133,10 +137,15 @@ def train_model(
             f"Iteration {training_round + 1}, train loss: {avg_loss:.8e}, test loss: {avg_test_loss:.8e}"
         )
 
+        # tell the scheduler to check the test loss and decide if it needs to slow down
+        scheduler.step(avg_test_loss)
+
         # log metrics to wandb dashboard
+        current_lr = optimizer.param_groups[0]['lr']
         wandb.log({
             "Train Loss": avg_loss,
             "Test Loss": avg_test_loss,
+            "Learning Rate": current_lr,
             "Epoch": training_round + 1
         })
     
