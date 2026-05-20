@@ -37,7 +37,7 @@ def rk4_next(dt, mass, position, angle, velocity, thrust):
 # liczy pozycja(t)
 def rk4_t(start_position, rocket_mass, fuel_mass, angle, time, thrust, isp, sampling_rate):
     t = 0
-    dt = 1/sampling_rate
+    dt = 1 / sampling_rate
     position = start_position
     velocity = np.array([0, 0, 0])
     acceleration = np.array([0, 0, 0])

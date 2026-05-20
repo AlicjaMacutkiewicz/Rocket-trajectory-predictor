@@ -28,6 +28,8 @@ def plot_prediction(
     pred_len,
     parameters,
     thrust_curve,
+    mean_xs,
+    std_xs,
     mean_acc,
     std_acc,
     device,
@@ -69,11 +71,11 @@ def plot_prediction(
         # forward pass through the GRU to get the predicted residual (x_s)
         predicted_x_s, _ = model(input_seq, pred_len=pred_len)
 
-        # denormalize network predictions and targets
-        predicted_x_s_denorm = predicted_x_s[0].cpu().numpy() * std_acc + mean_acc
-        target_denorm = target.cpu().numpy() * std_acc + mean_acc
+        # GRU output is a normalized residual — denormalize with residual stats
+        predicted_x_s_denorm = predicted_x_s[0].cpu().numpy() * std_xs + mean_xs
 
-        # denormalize historical target accelerations, so history/target/prediction share one scale.
+        # ground truth and history are normalized x_total — denormalize with x_total stats
+        target_denorm = target.cpu().numpy() * std_acc + mean_acc
         history_denorm = y_hist_test[sample_idx].cpu().numpy() * std_acc + mean_acc
 
         # calculate and add the known physics baseline (x_b)

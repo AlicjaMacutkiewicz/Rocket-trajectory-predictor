@@ -5,7 +5,13 @@ import torch
 import torch.optim as optim
 from data_loader import make_sequences, read_flight_data, split_flights
 from GRU_model import GRU
-from physics import TotalLoss, default_physics_paths, load_parameters, load_thrust_curve
+from physics import (
+    TotalLoss,
+    calculate_x_b,
+    default_physics_paths,
+    load_parameters,
+    load_thrust_curve,
+)
 from train import train_model
 from visualize import plot_losses, plot_prediction
 
@@ -83,6 +89,7 @@ def main():
     std_in = all_train_inputs.std(axis=0)
     std_in = np.where(std_in == 0, 1e-6, std_in)  # div by zero safeguard
 
+    # x_total stats — kept only for denormalizing the history plot in visualize.py
     all_train_targets = np.concatenate(train_targets, axis=0)
     mean_acc = all_train_targets.mean(axis=0)
     std_acc = all_train_targets.std(axis=0)
@@ -93,19 +100,35 @@ def main():
     std_pos = all_train_pos.std(axis=0)
     std_pos = np.where(std_pos == 0, 1e-6, std_pos)
 
+    # residual stats — what the GRU actually predicts: x_s = x_total - x_b
+    # must be computed on raw targets before normalizing, using raw times
+    all_train_times = np.concatenate(train_times, axis=0)
+    x_b_train = calculate_x_b(
+        torch.from_numpy(all_train_times), parameters, thrust_curve, sampling_rate
+    ).numpy()
+    all_train_targets_raw = np.concatenate(train_targets, axis=0)
+    x_s_train = all_train_targets_raw - x_b_train
+    mean_xs = x_s_train.mean(axis=0)
+    std_xs = x_s_train.std(axis=0)
+    std_xs = np.where(std_xs == 0, 1e-6, std_xs)
+
+    print(f"residual stats — mean_xs: {mean_xs},  std_xs: {std_xs}")
+    print(f"x_total  stats — mean_acc: {mean_acc}, std_acc: {std_acc}")
+
     # apply normalization
     train_inputs = [(f - mean_in) / std_in for f in train_inputs]
     test_inputs = [(f - mean_in) / std_in for f in test_inputs]
 
-    train_targets = [(f - mean_acc) / std_acc for f in train_targets]
-    test_targets = [(f - mean_acc) / std_acc for f in test_targets]
+    # targets normalized with RESIDUAL stats, not x_total stats
+    train_targets = [(f - mean_xs) / std_xs for f in train_targets]
+    test_targets = [(f - mean_xs) / std_xs for f in test_targets]
 
     train_positions = [(p - mean_pos) / std_pos for p in train_positions]
     test_positions = [(p - mean_pos) / std_pos for p in test_positions]
 
     # sequence generation
     loss = TotalLoss(
-        parameters, thrust_curve, mean_acc, std_acc, mean_pos, std_pos, sampling_rate, lambda_h=0.5
+        parameters, thrust_curve, mean_xs, std_xs, mean_pos, std_pos, sampling_rate, lambda_h=0.2
     ).to(device)
     (
         X_train,
@@ -201,7 +224,7 @@ def main():
 
     model = model.to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=0.00001, weight_decay=1e-5)
+    optimizer = optim.Adam(model.parameters(), lr=0.0005, weight_decay=1e-5)
 
     train_losses, test_losses = train_model(
         model,
@@ -261,6 +284,8 @@ def main():
             pred_len,
             parameters,
             thrust_curve,
+            mean_xs,
+            std_xs,
             mean_acc,
             std_acc,
             device,

@@ -18,6 +18,7 @@ GRAVITY = torch.tensor([0.0, 0.0, -9.81], dtype=torch.float32)
 R_EARTH = 6371000.0
 DEFAULT_FUEL_MASS = 13.04
 DEFAULT_ISP = 204.26
+G0 = 9.80665
 
 # cache for RK4 baseline calculations to prevent redundant numerical integration
 _RK4_CACHE = {}
@@ -164,9 +165,15 @@ def calculate_x_b(times, parameters, thrust_curve, sampling_rate):
         [np.interp(flat_times, rk4_times, rk4_accelerations[:, axis]) for axis in range(3)],
         axis=-1,
     )
+   # AFTER
     x_b = x_b.reshape((*times.shape, 3))
 
-    return torch.as_tensor(x_b, dtype=dtype, device=device)
+    gravity_correction = torch.zeros(3, dtype=dtype, device=device)
+    gravity_correction[2] = G0
+    x_b = torch.as_tensor(x_b, dtype=dtype, device=device)
+    x_b = x_b + gravity_correction
+    
+    return x_b
 
 
 def calculate_position(
@@ -315,8 +322,8 @@ class TotalLoss(nn.Module):
         self,
         parameters,
         thrust_curve,
-        mean_acc,
-        std_acc,
+        mean_xs,
+        std_xs,
         mean_pos,
         std_pos,
         sampling_rate,
@@ -326,8 +333,8 @@ class TotalLoss(nn.Module):
         self.acc_loss = BaseAccelerationMSELoss(parameters, thrust_curve, sampling_rate)
         self.pinn_loss = PINNPositionMSELoss(parameters, thrust_curve, sampling_rate)
 
-        self.mean_acc = torch.tensor(mean_acc, dtype=torch.float32)
-        self.std_acc = torch.tensor(std_acc, dtype=torch.float32)
+        self.mean_xs = torch.tensor(mean_xs, dtype=torch.float32)
+        self.std_xs  = torch.tensor(std_xs,  dtype=torch.float32)
         self.mean_pos = torch.tensor(mean_pos, dtype=torch.float32)
         self.std_pos = torch.tensor(std_pos, dtype=torch.float32)
 
@@ -343,14 +350,11 @@ class TotalLoss(nn.Module):
         initial_vel_batch,
         initial_time_batch,
     ):
-
-        # Denormalise accelerations and positions as values used to calculate pinn loss
         device = preds.device
-        denormalized_preds = preds * self.std_acc.to(device) + self.mean_acc.to(device)
-        denormalized_acc_target = acc_batch[:, :, :3] * self.std_acc.to(device) + self.mean_acc.to(
-            device
-        )
 
+        # preds are normalized residuals — denormalize with residual stats
+        denormalized_preds = preds * self.std_xs.to(device) + self.mean_xs.to(device)
+        denormalized_acc_target = acc_batch[:, :, :3] * self.std_xs.to(device) + self.mean_xs.to(device)
         denormalized_pos_target = pos_batch[:, :, :3] * self.std_pos.to(device) + self.mean_pos.to(
             device
         )
@@ -370,9 +374,7 @@ class TotalLoss(nn.Module):
 
         mse_acc = self.acc_loss(denormalized_preds, denormalized_acc_target, t_batch)
 
-        # Return weighted sum
         return mse_acc + self.lambda_h * pinn
-
 
 def default_physics_paths():
     """Retrieves absolute paths for default physics configurations."""
