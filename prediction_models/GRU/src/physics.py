@@ -168,10 +168,10 @@ def calculate_x_b(times, parameters, thrust_curve, sampling_rate):
    # AFTER
     x_b = x_b.reshape((*times.shape, 3))
 
-    gravity_correction = torch.zeros(3, dtype=dtype, device=device)
-    gravity_correction[2] = G0
-    x_b = torch.as_tensor(x_b, dtype=dtype, device=device)
-    x_b = x_b + gravity_correction
+    # gravity_correction = torch.zeros(3, dtype=dtype, device=device)
+    # gravity_correction[2] = G0
+    # x_b = torch.as_tensor(x_b, dtype=dtype, device=device)
+    # x_b = x_b + gravity_correction
     
     return x_b
 
