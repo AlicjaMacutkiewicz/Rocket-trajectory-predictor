@@ -1,0 +1,41 @@
+
+============================================================
+CHECKPOINT: checkpoints/best_gru_model_seq50.pth
+============================================================
+running on mps
+
+============================================================
+OPTION 1 — ACCELERATION DOMAIN EVALUATION
+============================================================
+lookback=50 steps, pred=50 steps, batch=512
+Baselines: (a) last-observed naive  (b) zero residual
+building window tensors...
+total windows: 4,669
+
+--- Results (physical acceleration units) ---
+
+  GRU residual prediction
+    [      x]  MAE=1.27572  RMSE=2.25646  Bias=+1.02401
+    [      y]  MAE=1.11886  RMSE=1.13935  Bias=-1.10886
+    [      z]  MAE=13.57671  RMSE=14.79833  Bias=-13.57571
+    [overall]  MAE=5.32376  RMSE=8.66757  Bias=-4.55352
+
+  Naive (last-observed) baseline
+    [      x]  MAE=0.26577  RMSE=1.64235  Bias=+0.06954
+    [      y]  MAE=0.03631  RMSE=0.20194  Bias=+0.00996
+    [      z]  MAE=0.55805  RMSE=3.55597  Bias=+0.27281
+    [overall]  MAE=0.28671  RMSE=2.26444  Bias=+0.11744
+
+  Zero-residual baseline (physics only)
+    [      x]  MAE=0.49143  RMSE=2.01814  Bias=+0.17216
+    [      y]  MAE=0.08536  RMSE=0.26229  Bias=+0.02416
+    [      z]  MAE=1.90759  RMSE=5.94668  Bias=+0.82179
+    [overall]  MAE=0.82813  RMSE=3.62881  Bias=+0.33937
+
+--- Verdict ---
+  GRU overall RMSE:        8.66757
+  Naive baseline RMSE:     2.26444
+  Zero-residual RMSE:      3.62881
+  ✗ GRU doesn't beat either baseline. Residual learning isn't working yet.
+
+[saved] eval_results/best_gru_model_seq50.txt

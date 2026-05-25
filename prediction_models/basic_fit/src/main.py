@@ -66,7 +66,7 @@ def main():
     train_inputs, test_inputs = split_flights(flights_inputs)
     train_targets, _test_targets = split_flights(flights_targets)
     _train_positions, test_positions = split_flights(flight_positions)
-    _train_times, test_times = split_flights(flight_times)
+    train_times, test_times = split_flights(flight_times)
 
     # calculate normalization stats for the inputs
     all_train_inputs = np.concatenate(train_inputs, axis=0)
@@ -75,10 +75,27 @@ def main():
     std_in = np.where(std_in == 0, 1e-6, std_in) 
 
     # calculate normalization stats for the targets
+    # AFTER
     all_train_targets = np.concatenate(train_targets, axis=0)
     mean_acc = all_train_targets.mean(axis=0)
     std_acc = all_train_targets.std(axis=0)
     std_acc = np.where(std_acc == 0, 1e-6, std_acc)
+
+    # residual stats — must match what main.py used during training
+    all_train_times = np.concatenate(train_times, axis=0)
+    x_b_train = calculate_x_b(
+        torch.from_numpy(all_train_times.astype(np.float32)),
+        parameters, thrust_curve, sampling_rate
+    )
+    x_s_train = all_train_targets - x_b_train
+    mean_xs = x_s_train.mean(axis=0)
+    std_xs  = x_s_train.std(axis=0)
+    std_xs  = np.where(std_xs == 0, 1e-6, std_xs)
+
+    print(f"mean_xs: {mean_xs.round(4)}")
+    print(f"std_xs:  {std_xs.round(4)}")
+    print(f"mean_acc: {mean_acc.round(4)}")
+    print(f"std_acc:  {std_acc.round(4)}")
 
     print(f"loading GRU model from: {args.model_path}")
     model = GRU(input_size=8, hidden_size=64, output_size=3, num_layers=2)
@@ -141,12 +158,13 @@ def main():
                     t_future_tensor = torch.tensor(t_future, dtype=torch.float32).unsqueeze(0).to(device)
                     
                     predicted_acc_norm, _ = model(X_tensor, pred_len=pred_steps)
-                    predicted_acc = (predicted_acc_norm[0].cpu().numpy() * std_acc) + mean_acc
-                    
-                    base_acc = calculate_x_b(t_future_tensor, parameters, thrust_curve, sampling_rate)[0].cpu().numpy()
+                    predicted_acc = (predicted_acc_norm[0].cpu().numpy() * std_xs) + mean_xs                    
+                    base_acc = calculate_x_b(t_future_tensor, parameters, thrust_curve, sampling_rate)[0]
                     
                     hybrid_acc = predicted_acc + base_acc
                     hybrid_acc_z = hybrid_acc[:, 2] 
+                    if total_windows <= 5:
+                        print(f"window {total_windows}: predicted_acc_z mean={predicted_acc[:,2].mean():.3f}, base_acc_z mean={base_acc[:,2].mean():.3f}, hybrid_z mean={hybrid_acc_z.mean():.3f}")
                     
                     initial_pos_z = z_pos[i]
                     initial_vel_z = vel[i, 2]
