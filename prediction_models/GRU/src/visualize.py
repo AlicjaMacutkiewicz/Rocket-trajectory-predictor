@@ -80,7 +80,7 @@ def plot_prediction(
 
         # calculate and add the known physics baseline (x_b)
         base_acc = (
-            calculate_x_b(target_times, parameters, thrust_curve, sampling_rate)[0].cpu().numpy()
+            calculate_x_b(target_times, parameters, thrust_curve, sampling_rate)[0]
         )
         prediction = predicted_x_s_denorm + base_acc
         rk4_baseline = base_acc

@@ -47,6 +47,7 @@ def parse_args():
     parser.add_argument("--year", type=str, default="2025")
     parser.add_argument("--downsample", type=int, default=25)
     parser.add_argument("--resume-from", type=str, default=None)
+    parser.add_argument("--model-type", type=str, default="gru_res_phys")
 
     return parser.parse_args()
 
@@ -105,7 +106,7 @@ def main():
     all_train_times = np.concatenate(train_times, axis=0)
     x_b_train = calculate_x_b(
         torch.from_numpy(all_train_times), parameters, thrust_curve, sampling_rate
-    ).numpy()
+    )
     all_train_targets_raw = np.concatenate(train_targets, axis=0)
     x_s_train = all_train_targets_raw - x_b_train
     mean_xs = x_s_train.mean(axis=0)
@@ -115,21 +116,30 @@ def main():
     print(f"residual stats — mean_xs: {mean_xs},  std_xs: {std_xs}")
     print(f"x_total  stats — mean_acc: {mean_acc}, std_acc: {std_acc}")
 
+    if args.model_type == "gru":
+        target_mean = mean_acc
+        target_std = std_acc
+    else: # Covers "gru_res" and "gru_res_phys"
+        target_mean = mean_xs
+        target_std = std_xs
+
     # apply normalization
     train_inputs = [(f - mean_in) / std_in for f in train_inputs]
     test_inputs = [(f - mean_in) / std_in for f in test_inputs]
 
     # targets normalized with RESIDUAL stats, not x_total stats
-    train_targets = [(f - mean_xs) / std_xs for f in train_targets]
-    test_targets = [(f - mean_xs) / std_xs for f in test_targets]
+    train_targets = [(f - target_mean) / target_std for f in train_targets]
+    test_targets = [(f - target_mean) / target_std for f in test_targets]
 
     train_positions = [(p - mean_pos) / std_pos for p in train_positions]
     test_positions = [(p - mean_pos) / std_pos for p in test_positions]
 
+
     # sequence generation
     loss = TotalLoss(
-        parameters, thrust_curve, mean_xs, std_xs, mean_pos, std_pos, sampling_rate, lambda_h=0.2
+        parameters, thrust_curve, mean_xs, std_xs, mean_pos, std_pos, sampling_rate, lambda_h=0.2, model_type = args.model_type,
     ).to(device)
+
     (
         X_train,
         y_hist_train,
@@ -284,8 +294,8 @@ def main():
             pred_len,
             parameters,
             thrust_curve,
-            mean_xs,
-            std_xs,
+            target_mean,
+            target_std,
             mean_acc,
             std_acc,
             device,

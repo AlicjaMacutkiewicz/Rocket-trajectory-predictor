@@ -155,9 +155,6 @@ def calculate_x_b(times, parameters, thrust_curve, sampling_rate):
 
     # Keep all tensors on the same device and with the same dtype as times.
 
-    device = times.device
-    dtype = times.dtype
-
     rk4_times, _, _, rk4_accelerations = _get_rk4_tables(parameters, thrust_curve, sampling_rate)
     flat_times = times.detach().cpu().numpy().reshape(-1)
 
@@ -218,27 +215,32 @@ class BaseAccelerationMSELoss(nn.Module):
     derived by subtracting the classical baseline (x_b) from the simulator's total output.
     """
 
-    def __init__(self, parameters, thrust_curve, sampling_rate):
+    def __init__(self, parameters, thrust_curve, sampling_rate, model_type):
         super().__init__()
         self.parameters = parameters
         self.thrust_curve = thrust_curve
         self.mse = nn.MSELoss()
         self.sampling_rate = sampling_rate
+        self.model_type = model_type
 
     def forward(self, predicted_x_s, true_x_total, times):
-        true_x_s = calculate_residual_target(
-            true_x_total,
-            times,
-            self.parameters,
-            self.thrust_curve,
-            self.sampling_rate,
-        )
-        return self.mse(predicted_x_s, true_x_s)
+        if self.model_type == "gru":    # just gru
+            true_target = true_x_total[:, :, :3]
+        else:                           # residual gru
+            true_target = calculate_residual_target(
+                true_x_total,
+                times,
+                self.parameters,
+                self.thrust_curve,
+                self.sampling_rate,
+            )
+        return self.mse(predicted_x_s, true_target)
 
 
 def calculate_residual_target(true_x_total, times, parameters, thrust_curve, sampling_rate):
     """Return the residual target learned by GRU: x_s = x_total - x_b."""
-    x_b = calculate_x_b(times, parameters, thrust_curve, sampling_rate)
+    x_b_numpy = calculate_x_b(times, parameters, thrust_curve, sampling_rate)
+    x_b = torch.as_tensor(x_b_numpy, dtype=true_x_total.dtype, device=true_x_total.device)
     return true_x_total[:, :, :3] - x_b
 
 
@@ -280,12 +282,13 @@ class PINNPositionMSELoss(nn.Module):
     trajectory drifts from the true simulator position.
     """
 
-    def __init__(self, parameters, thrust_curve, sampling_rate):
+    def __init__(self, parameters, thrust_curve, sampling_rate, model_type):
         super().__init__()
         self.parameters = parameters
         self.thrust_curve = thrust_curve
         self.mse = nn.MSELoss()
         self.sampling_rate = sampling_rate
+        self.model_type = model_type
 
     def forward(
         self,
@@ -296,8 +299,12 @@ class PINNPositionMSELoss(nn.Module):
         initial_velocity,
         initial_time,
     ):
-        x_b = calculate_x_b(times, self.parameters, self.thrust_curve, self.sampling_rate)
-        predicted_x_total = predicted_x_s + x_b
+        if self.model_type in ["gru_res", "gru_res_phys"]:
+            x_b_numpy = calculate_x_b(times, self.parameters, self.thrust_curve, self.sampling_rate)
+            x_b = torch.as_tensor(x_b_numpy, dtype=predicted_x_s.dtype, device=predicted_x_s.device)
+            predicted_x_total = predicted_x_s + x_b
+        else:
+            predicted_x_total = predicted_x_s
 
         integrated_position, _ = integrate_acceleration(
             predicted_x_total,
@@ -322,23 +329,26 @@ class TotalLoss(nn.Module):
         self,
         parameters,
         thrust_curve,
-        mean_xs,
-        std_xs,
+        target_mean,
+        target_std,
         mean_pos,
         std_pos,
         sampling_rate,
         lambda_h=1e-6,
+        model_type = "gru_res_phys"
     ):
         super().__init__()
-        self.acc_loss = BaseAccelerationMSELoss(parameters, thrust_curve, sampling_rate)
-        self.pinn_loss = PINNPositionMSELoss(parameters, thrust_curve, sampling_rate)
+        self.model_type = model_type
 
-        self.mean_xs = torch.tensor(mean_xs, dtype=torch.float32)
-        self.std_xs  = torch.tensor(std_xs,  dtype=torch.float32)
+        self.acc_loss = BaseAccelerationMSELoss(parameters, thrust_curve, sampling_rate, model_type)
+        self.pinn_loss = PINNPositionMSELoss(parameters, thrust_curve, sampling_rate, model_type)
+
+        self.target_mean = torch.tensor(target_mean, dtype=torch.float32)
+        self.target_std  = torch.tensor(target_std,  dtype=torch.float32)
         self.mean_pos = torch.tensor(mean_pos, dtype=torch.float32)
         self.std_pos = torch.tensor(std_pos, dtype=torch.float32)
 
-        self.lambda_h = lambda_h
+        self.lambda_h = lambda_h        
 
     def forward(
         self,
@@ -353,8 +363,8 @@ class TotalLoss(nn.Module):
         device = preds.device
 
         # preds are normalized residuals — denormalize with residual stats
-        denormalized_preds = preds * self.std_xs.to(device) + self.mean_xs.to(device)
-        denormalized_acc_target = acc_batch[:, :, :3] * self.std_xs.to(device) + self.mean_xs.to(device)
+        denormalized_preds = preds * self.target_std.to(device) + self.target_mean.to(device)
+        denormalized_acc_target = acc_batch[:, :, :3] * self.target_std.to(device) + self.target_mean.to(device)
         denormalized_pos_target = pos_batch[:, :, :3] * self.std_pos.to(device) + self.mean_pos.to(
             device
         )
@@ -374,7 +384,9 @@ class TotalLoss(nn.Module):
 
         mse_acc = self.acc_loss(denormalized_preds, denormalized_acc_target, t_batch)
 
-        return mse_acc + self.lambda_h * pinn
+        physics_accounted = bool(self.model_type == "gru_res_phys" or self.model_type == "gru_phys")
+
+        return mse_acc + (self.lambda_h * pinn if physics_accounted else 0)
 
 def default_physics_paths():
     """Retrieves absolute paths for default physics configurations."""
