@@ -1,0 +1,156 @@
+{
+  "input_dir": "/Users/elukasiuk/Desktop/projects/pg-general/Rocket-trajectory-predictor/far_out_26_data",
+  "output": "/Users/elukasiuk/Desktop/projects/pg-general/Rocket-trajectory-predictor/far_out_26_data/converted/flight_far_out_26.parquet",
+  "rows": 6742,
+  "columns": [
+    "Best_Acc_X",
+    "Best_Acc_Y",
+    "Best_Acc_Z",
+    "Best_AngVel_X",
+    "Best_AngVel_Y",
+    "Best_AngVel_Z",
+    "Barometer_Value",
+    "Sensor_Value",
+    "Thrust",
+    "Mass",
+    "Position_X",
+    "Position_Y",
+    "Position_Z",
+    "Acceleration_X",
+    "Acceleration_Y",
+    "Acceleration_Z",
+    "flight_id"
+  ],
+  "sensor_column_order": [
+    "Best_Acc_X",
+    "Best_Acc_Y",
+    "Best_Acc_Z",
+    "Best_AngVel_X",
+    "Best_AngVel_Y",
+    "Best_AngVel_Z",
+    "Barometer_Value",
+    "Sensor_Value"
+  ],
+  "time_start_s": -0.7549999952316284,
+  "time_end_s": 66.65499877929688,
+  "dt_median_s": 0.010000228881835938,
+  "dt_min_s": 0.0099945068359375,
+  "dt_max_s": 0.01000213623046875,
+  "source_rows": {
+    "imu.csv": 6742,
+    "baro.csv": 6743,
+    "flightInfo.csv": 6742,
+    "filteredDataInfo.csv": 6742
+  },
+  "options": {
+    "timeline": "imu",
+    "temperature_unit": "celsius",
+    "barometer_source": "pressure",
+    "vertical_label_source": "flight_info",
+    "include_label_placeholders": true
+  },
+  "stats": {
+    "Best_Acc_X": {
+      "min": -39.134620666503906,
+      "max": 29.420419692993164,
+      "mean": -0.8344358801841736,
+      "nan_count": 0
+    },
+    "Best_Acc_Y": {
+      "min": -81.65100860595703,
+      "max": 35.8869743347168,
+      "mean": -10.431248664855957,
+      "nan_count": 0
+    },
+    "Best_Acc_Z": {
+      "min": -39.59446334838867,
+      "max": 32.39024353027344,
+      "mean": -1.028472900390625,
+      "nan_count": 0
+    },
+    "Best_AngVel_X": {
+      "min": -65.54621887207031,
+      "max": 77.87114715576172,
+      "mean": 3.3778598308563232,
+      "nan_count": 0
+    },
+    "Best_AngVel_Y": {
+      "min": -435.994384765625,
+      "max": 48.52941131591797,
+      "mean": -206.18186950683594,
+      "nan_count": 0
+    },
+    "Best_AngVel_Z": {
+      "min": -149.8599395751953,
+      "max": 57.633052825927734,
+      "mean": -3.1800527572631836,
+      "nan_count": 0
+    },
+    "Barometer_Value": {
+      "min": 86016.0,
+      "max": 94115.0,
+      "mean": 90105.5625,
+      "nan_count": 0
+    },
+    "Sensor_Value": {
+      "min": 320.9100036621094,
+      "max": 321.91998291015625,
+      "mean": 321.4723815917969,
+      "nan_count": 0
+    },
+    "Thrust": {
+      "min": null,
+      "max": null,
+      "mean": null,
+      "nan_count": 6742
+    },
+    "Mass": {
+      "min": null,
+      "max": null,
+      "mean": null,
+      "nan_count": 6742
+    },
+    "Position_X": {
+      "min": 0.0,
+      "max": 0.0,
+      "mean": 0.0,
+      "nan_count": 0
+    },
+    "Position_Y": {
+      "min": 0.0,
+      "max": 0.0,
+      "mean": 0.0,
+      "nan_count": 0
+    },
+    "Position_Z": {
+      "min": -0.09726539254188538,
+      "max": 700.7090454101562,
+      "mean": 358.77294921875,
+      "nan_count": 0
+    },
+    "Acceleration_X": {
+      "min": 0.0,
+      "max": 0.0,
+      "mean": 0.0,
+      "nan_count": 0
+    },
+    "Acceleration_Y": {
+      "min": 0.0,
+      "max": 0.0,
+      "mean": 0.0,
+      "nan_count": 0
+    },
+    "Acceleration_Z": {
+      "min": -10.646467208862305,
+      "max": 61.66725540161133,
+      "mean": -0.07161808013916016,
+      "nan_count": 0
+    }
+  },
+  "warnings": [
+    "Position_X/Y and Acceleration_X/Y are placeholders if label columns are included.",
+    "Real IMU axes may not match the synthetic training coordinate frame.",
+    "Acceleration labels are vertical-only from flightInfo/filteredData, not full 3D truth.",
+    "baro.csv T was converted from Celsius to Kelvin for Sensor_Value."
+  ]
+}
