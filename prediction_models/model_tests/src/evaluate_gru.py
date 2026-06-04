@@ -39,9 +39,14 @@ SENSOR_COLUMNS = [
 ]
 TARGET_COLUMNS = ["Acceleration_X", "Acceleration_Y", "Acceleration_Z"]
 POSITION_COLUMNS = ["Position_X", "Position_Y", "Position_Z"]
-METHODS = ["GRU + RK4", "Polynomial", "RK4 only", "Last acceleration", "Oracle acceleration"]
+PLAIN_GRU_METHOD = "Plain GRU"
+GRU_RK4_METHOD = "GRU-RK4"
+GRU_RK4_PHYS_METHOD = "GRU-RK4 + physics"
+BASELINE_METHODS = ["Polynomial", "RK4 only", "Last acceleration", "Oracle acceleration"]
 COLORS = {
-    "GRU + RK4": "#d62728",
+    PLAIN_GRU_METHOD: "#17becf",
+    GRU_RK4_METHOD: "#d62728",
+    GRU_RK4_PHYS_METHOD: "#8c564b",
     "Polynomial": "#1f77b4",
     "RK4 only": "#9467bd",
     "Last acceleration": "#ff7f0e",
@@ -52,10 +57,36 @@ COLORS = {
 def parse_args() -> argparse.Namespace:
     home = Path.home()
     parser = argparse.ArgumentParser(
-        description="GPU-batched exhaustive external test for best_gru_model_seq100.pth."
+        description="GPU-batched exhaustive external test for GRU ablations and baselines."
     )
     parser.add_argument("--repo", type=Path, default=home / "Rocket-trajectory-predictor")
-    parser.add_argument("--model", type=Path, default=None)
+    parser.add_argument(
+        "--model",
+        type=Path,
+        default=None,
+        help=(
+            "Backward-compatible alias for --gru-res-phys-model. "
+            "Prefer the explicit model flags for ablation runs."
+        ),
+    )
+    parser.add_argument(
+        "--gru-model",
+        type=Path,
+        default=None,
+        help="Plain GRU direct-acceleration checkpoint. Defaults to prediction_models/GRU/src/gru_model.pth.",
+    )
+    parser.add_argument(
+        "--gru-res-model",
+        type=Path,
+        default=None,
+        help="Residual GRU checkpoint without physics-position loss. Defaults to prediction_models/GRU/src/gru_res_model.pth.",
+    )
+    parser.add_argument(
+        "--gru-res-phys-model",
+        type=Path,
+        default=None,
+        help="Residual GRU checkpoint with physics-position loss. Defaults to prediction_models/GRU/src/gru_res_phys_model.pth.",
+    )
     parser.add_argument(
         "--scaler-data-dir",
         type=Path,
@@ -72,7 +103,7 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         type=Path,
         default=None,
-        help="Results output directory. Defaults to ~/gru_eval_external_best_TIMESTAMP.",
+        help="Results output directory. Defaults to ~/gru_ablation_eval_TIMESTAMP.",
     )
     parser.add_argument("--training-num-flights", type=int, default=1652)
     parser.add_argument("--training-start-flight", type=int, default=0)
@@ -118,6 +149,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Proceed when scaler-data-dir has fewer than training-num-flights files.",
     )
+    parser.add_argument(
+        "--strict-models",
+        action="store_true",
+        help="Fail if any configured neural checkpoint is missing instead of skipping missing checkpoints.",
+    )
     parser.add_argument("--no-plots", action="store_true", help="Skip PNG rendering.")
     return parser.parse_args()
 
@@ -130,13 +166,22 @@ def resolve_paths(args: argparse.Namespace) -> None:
     args.repo = args.repo.expanduser().resolve()
     args.scaler_data_dir = args.scaler_data_dir.expanduser().resolve()
     args.eval_data_dir = args.eval_data_dir.expanduser().resolve()
-    if args.model is None:
-        args.model = args.repo / "prediction_models" / "GRU" / "src" / "best_gru_model_seq100.pth"
+    model_root = args.repo / "prediction_models" / "GRU" / "src"
+    if args.gru_model is None:
+        args.gru_model = model_root / "gru_model.pth"
     else:
-        args.model = args.model.expanduser().resolve()
+        args.gru_model = args.gru_model.expanduser().resolve()
+    if args.gru_res_model is None:
+        args.gru_res_model = model_root / "gru_res_model.pth"
+    else:
+        args.gru_res_model = args.gru_res_model.expanduser().resolve()
+    if args.gru_res_phys_model is None:
+        args.gru_res_phys_model = args.model or model_root / "gru_res_phys_model.pth"
+    args.gru_res_phys_model = args.gru_res_phys_model.expanduser().resolve()
+    args.model = args.gru_res_phys_model
     if args.output_dir is None:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        args.output_dir = Path.home() / f"gru_eval_external_best_{stamp}"
+        args.output_dir = Path.home() / f"gru_ablation_eval_{stamp}"
     else:
         args.output_dir = args.output_dir.expanduser().resolve()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -262,6 +307,59 @@ class PlotWindow:
         return self.score < other.score
 
 
+@dataclass(frozen=True)
+class ModelSpec:
+    name: str
+    path: Path
+    output_mode: str  # "direct" predicts total acceleration, "residual" predicts x_total - x_b
+
+
+def method_key(method: str) -> str:
+    key = "".join(character.lower() if character.isalnum() else "_" for character in method)
+    return "_".join(part for part in key.split("_") if part)
+
+
+def configured_model_specs(args: argparse.Namespace) -> list[ModelSpec]:
+    candidates = [
+        ModelSpec(PLAIN_GRU_METHOD, args.gru_model, "direct"),
+        ModelSpec(GRU_RK4_METHOD, args.gru_res_model, "residual"),
+        ModelSpec(GRU_RK4_PHYS_METHOD, args.gru_res_phys_model, "residual"),
+    ]
+    specs: list[ModelSpec] = []
+    missing: list[ModelSpec] = []
+    for spec in candidates:
+        if spec.path.exists():
+            specs.append(spec)
+        else:
+            missing.append(spec)
+    if missing:
+        message = "; ".join(f"{spec.name}: {spec.path}" for spec in missing)
+        if args.strict_models:
+            raise FileNotFoundError(f"Configured checkpoint(s) missing: {message}")
+        log(f"WARNING: skipping missing neural checkpoint(s): {message}")
+    if not specs:
+        raise FileNotFoundError(
+            "No neural checkpoints were found. Provide at least one of "
+            "--gru-model, --gru-res-model, or --gru-res-phys-model."
+        )
+    return specs
+
+
+def method_order(model_specs: list[ModelSpec]) -> list[str]:
+    return [spec.name for spec in model_specs] + BASELINE_METHODS
+
+
+def acceleration_method_order(model_specs: list[ModelSpec]) -> list[str]:
+    return [spec.name for spec in model_specs] + ["RK4 only", "Last acceleration"]
+
+
+def primary_method(model_specs: list[ModelSpec]) -> str:
+    for preferred in [GRU_RK4_PHYS_METHOD, GRU_RK4_METHOD, PLAIN_GRU_METHOD]:
+        if any(spec.name == preferred for spec in model_specs):
+            return preferred
+    return model_specs[0].name
+
+
 def configure_imports(repo: Path):
     gru_src = repo / "prediction_models" / "GRU" / "src"
     classical_src = repo / "prediction_models" / "classical_model" / "src"
@@ -306,7 +404,7 @@ def baseline_acceleration(calculate_x_b, times, parameters, thrust_curve, rate: 
 
 def compute_scalers(
     args: argparse.Namespace, calculate_x_b, parameters: dict, thrust_curve: np.ndarray, rate: float
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict]:
     files = find_training_files(args.scaler_data_dir)
     required_end = args.training_start_flight + args.training_num_flights
     if len(files) < required_end and not args.allow_incomplete_scaler_data:
@@ -326,6 +424,7 @@ def compute_scalers(
     random.shuffle(indices)
     train_indices = indices[: int(len(selected) * args.train_ratio)]
     input_arrays: list[np.ndarray] = []
+    target_arrays: list[np.ndarray] = []
     residual_arrays: list[np.ndarray] = []
     broken: list[dict[str, str]] = []
     scaler_start = time.time()
@@ -338,6 +437,7 @@ def compute_scalers(
             continue
         base = baseline_acceleration(calculate_x_b, times, parameters, thrust_curve, rate)
         input_arrays.append(inputs)
+        target_arrays.append(targets)
         residual_arrays.append(targets - base)
         if progress % 250 == 0:
             log(f"Scaler reconstruction: {progress:,}/{len(train_indices):,} training flights read")
@@ -349,9 +449,12 @@ def compute_scalers(
     if not input_arrays:
         raise RuntimeError("No usable training flights were available for scaler reconstruction.")
     all_inputs = np.concatenate(input_arrays, axis=0)
+    all_targets = np.concatenate(target_arrays, axis=0)
     all_residuals = np.concatenate(residual_arrays, axis=0)
     mean_in = all_inputs.mean(axis=0)
     std_in = np.where(all_inputs.std(axis=0) == 0, 1e-6, all_inputs.std(axis=0))
+    mean_acc = all_targets.mean(axis=0)
+    std_acc = np.where(all_targets.std(axis=0) == 0, 1e-6, all_targets.std(axis=0))
     mean_xs = all_residuals.mean(axis=0)
     std_xs = np.where(all_residuals.std(axis=0) == 0, 1e-6, all_residuals.std(axis=0))
     metadata = {
@@ -371,6 +474,8 @@ def compute_scalers(
         args.output_dir / "reconstructed_scalers.npz",
         mean_in=mean_in,
         std_in=std_in,
+        mean_acc=mean_acc,
+        std_acc=std_acc,
         mean_xs=mean_xs,
         std_xs=std_xs,
     )
@@ -380,13 +485,14 @@ def compute_scalers(
         f"Scalers ready from {len(input_arrays):,} training flights / {len(all_inputs):,} samples "
         f"in {metadata['runtime_seconds']:.1f}s"
     )
+    log(f"Total acceleration scaler mean={np.round(mean_acc, 4)} std={np.round(std_acc, 4)}")
     log(f"Residual scaler mean={np.round(mean_xs, 4)} std={np.round(std_xs, 4)}")
-    return mean_in, std_in, mean_xs, std_xs, metadata
+    return mean_in, std_in, mean_acc, std_acc, mean_xs, std_xs, metadata
 
 
-def load_network(GRU, args: argparse.Namespace, device: torch.device, gpu_ids: list[int]):
+def load_network(GRU, path: Path, device: torch.device, gpu_ids: list[int]):
     model = GRU(input_size=8, hidden_size=64, output_size=3, num_layers=2, dropout=0.2)
-    state = torch.load(args.model, map_location="cpu")
+    state = torch.load(path, map_location="cpu")
     state = {key.removeprefix("module."): value for key, value in state.items()}
     model.load_state_dict(state)
     model.eval()
@@ -396,6 +502,16 @@ def load_network(GRU, args: argparse.Namespace, device: torch.device, gpu_ids: l
         log(f"Model inference will use DataParallel across GPUs {gpu_ids}.")
     model.eval()
     return model
+
+
+def load_networks(
+    GRU, model_specs: list[ModelSpec], device: torch.device, gpu_ids: list[int]
+) -> dict[str, torch.nn.Module]:
+    models = {}
+    for spec in model_specs:
+        log(f"Loading {spec.name} from {spec.path}")
+        models[spec.name] = load_network(GRU, spec.path, device, gpu_ids)
+    return models
 
 
 def integrate_position(
@@ -455,7 +571,7 @@ def polynomial_prediction(
     return np.stack(outputs, axis=-1).astype(np.float32)
 
 
-def predict_residual(
+def predict_normalized(
     model,
     inputs: np.ndarray,
     mean_in: np.ndarray,
@@ -475,6 +591,43 @@ def predict_residual(
                 prediction, _ = model(tensor, pred_len=pred_len)
             outputs.append(prediction.float().cpu().numpy())
     return np.concatenate(outputs, axis=0)
+
+
+def predict_model_accelerations(
+    model_specs: list[ModelSpec],
+    models: dict[str, torch.nn.Module],
+    input_windows: np.ndarray,
+    base_acc: np.ndarray,
+    mean_in: np.ndarray,
+    std_in: np.ndarray,
+    mean_acc: np.ndarray,
+    std_acc: np.ndarray,
+    mean_xs: np.ndarray,
+    std_xs: np.ndarray,
+    pred_len: int,
+    batch_size: int,
+    device: torch.device,
+    amp: bool,
+) -> dict[str, np.ndarray]:
+    predictions = {}
+    for spec in model_specs:
+        normalized = predict_normalized(
+            models[spec.name],
+            input_windows,
+            mean_in,
+            std_in,
+            pred_len,
+            batch_size,
+            device,
+            amp,
+        )
+        if spec.output_mode == "direct":
+            predictions[spec.name] = normalized * std_acc + mean_acc
+        elif spec.output_mode == "residual":
+            predictions[spec.name] = base_acc + normalized * std_xs + mean_xs
+        else:
+            raise ValueError(f"Unknown output mode for {spec.name}: {spec.output_mode}")
+    return predictions
 
 
 def retain_worst(
@@ -532,7 +685,8 @@ def retain_illustrative(
 
 def evaluate(
     args: argparse.Namespace,
-    model,
+    model_specs: list[ModelSpec],
+    models: dict[str, torch.nn.Module],
     device: torch.device,
     calculate_x_b,
     parameters: dict,
@@ -540,6 +694,8 @@ def evaluate(
     rate: float,
     mean_in: np.ndarray,
     std_in: np.ndarray,
+    mean_acc: np.ndarray,
+    std_acc: np.ndarray,
     mean_xs: np.ndarray,
     std_xs: np.ndarray,
 ) -> tuple[dict, list[dict], list[PlotWindow], list[PlotWindow]]:
@@ -551,8 +707,11 @@ def evaluate(
         raise RuntimeError(f"No parquet test files found under {args.eval_data_dir}.")
     log(f"External evaluation files discovered: {len(files):,} under {args.eval_data_dir}")
     axes = ["X", "Y", "Z", "3D"]
-    metrics = {method: {axis: Metric() for axis in axes} for method in METHODS}
-    acceleration = {method: AccMetric() for method in ["GRU + RK4", "RK4 only", "Last acceleration"]}
+    methods = method_order(model_specs)
+    acc_methods = acceleration_method_order(model_specs)
+    primary = primary_method(model_specs)
+    metrics = {method: {axis: Metric() for axis in axes} for method in methods}
+    acceleration = {method: AccMetric() for method in acc_methods}
     rows: list[dict] = []
     skipped: list[dict[str, str]] = []
     worst: list[PlotWindow] = []
@@ -576,20 +735,25 @@ def evaluate(
         actual_acc = np.stack([targets[i : i + args.pred_len] for i in starts])
         actual_position = np.stack([positions[i : i + args.pred_len] for i in starts])
         base_acc = baseline_acceleration(calculate_x_b, future_times, parameters, thrust_curve, rate)
-        residual_normalized = predict_residual(
-            model,
+        model_accelerations = predict_model_accelerations(
+            model_specs,
+            models,
             input_windows,
+            base_acc,
             mean_in,
             std_in,
+            mean_acc,
+            std_acc,
+            mean_xs,
+            std_xs,
             args.pred_len,
             args.batch_size,
             device,
             args.amp,
         )
-        residual = residual_normalized * std_xs + mean_xs
-        hybrid_acc = residual + base_acc
         last_acc = np.repeat(targets[starts - 1, None, :], args.pred_len, axis=1)
-        acceleration["GRU + RK4"].add(hybrid_acc, actual_acc)
+        for method, prediction in model_accelerations.items():
+            acceleration[method].add(prediction, actual_acc)
         acceleration["RK4 only"].add(base_acc, actual_acc)
         acceleration["Last acceleration"].add(last_acc, actual_acc)
         previous = starts - 1
@@ -599,28 +763,33 @@ def evaluate(
         initial_velocity = (positions[previous] - positions[before_previous]) / historical_dt[:, None]
         initial_time = times[previous]
         predictions = {
-            "GRU + RK4": integrate_position(
-                hybrid_acc, future_times, initial_position, initial_velocity, initial_time
-            ),
-            "RK4 only": integrate_position(
-                base_acc, future_times, initial_position, initial_velocity, initial_time
-            ),
-            "Last acceleration": integrate_position(
-                last_acc, future_times, initial_position, initial_velocity, initial_time
-            ),
-            "Oracle acceleration": integrate_position(
-                actual_acc, future_times, initial_position, initial_velocity, initial_time
-            ),
-            "Polynomial": polynomial_prediction(
-                np.stack([times[i - args.seq_len : i] for i in starts]),
-                np.stack([positions[i - args.seq_len : i] for i in starts]),
-                future_times,
-            ),
+            method: integrate_position(
+                prediction, future_times, initial_position, initial_velocity, initial_time
+            )
+            for method, prediction in model_accelerations.items()
         }
+        predictions.update(
+            {
+                "RK4 only": integrate_position(
+                    base_acc, future_times, initial_position, initial_velocity, initial_time
+                ),
+                "Last acceleration": integrate_position(
+                    last_acc, future_times, initial_position, initial_velocity, initial_time
+                ),
+                "Oracle acceleration": integrate_position(
+                    actual_acc, future_times, initial_position, initial_velocity, initial_time
+                ),
+                "Polynomial": polynomial_prediction(
+                    np.stack([times[i - args.seq_len : i] for i in starts]),
+                    np.stack([positions[i - args.seq_len : i] for i in starts]),
+                    future_times,
+                ),
+            }
+        )
         flight_row: dict[str, object] = {"file": path.name, "windows": int(len(starts))}  # noqa: RUF046
         flight_window_rmse: dict[str, np.ndarray] = {}
-        for method in METHODS:
-            key = method.lower().replace(" ", "_").replace("+", "plus")
+        for method in methods:
+            key = method_key(method)
             for axis_index, axis in enumerate(["X", "Y", "Z"]):
                 axis_rmse = metrics[method][axis].add(
                     predictions[method][:, :, axis_index],
@@ -640,7 +809,7 @@ def evaluate(
         retain_worst(
             worst,
             6,
-            flight_window_rmse["GRU + RK4"],
+            flight_window_rmse[primary],
             path,
             starts,
             future_times,
@@ -650,7 +819,7 @@ def evaluate(
         retain_illustrative(
             illustrative,
             illustrative_targets,
-            flight_window_rmse["GRU + RK4"],
+            flight_window_rmse[primary],
             path,
             starts,
             future_times,
@@ -671,7 +840,13 @@ def evaluate(
     if not rows:
         raise RuntimeError("No readable external test flights produced evaluation windows.")
     summary = {
-        "model": str(args.model),
+        "models": [
+            {"name": spec.name, "path": str(spec.path), "output_mode": spec.output_mode}
+            for spec in model_specs
+        ],
+        "primary_method": primary,
+        "neural_methods": [spec.name for spec in model_specs],
+        "methods": methods,
         "eval_data_dir": str(args.eval_data_dir),
         "flight_files_discovered": len(files),
         "flights_evaluated": len(rows),
@@ -686,7 +861,7 @@ def evaluate(
         "amp_enabled": bool(args.amp and device.type == "cuda"),
         "position_metrics": {
             method: {axis: metrics[method][axis].summarize() for axis in axes}
-            for method in METHODS
+            for method in methods
         },
         "acceleration_metrics": {
             method: acceleration[method].summarize() for method in acceleration
@@ -726,7 +901,8 @@ def endpoint_summary(errors: np.ndarray, threshold: float) -> dict[str, float | 
 
 def evaluate_landing_horizons(
     args: argparse.Namespace,
-    model,
+    model_specs: list[ModelSpec],
+    models: dict[str, torch.nn.Module],
     device: torch.device,
     calculate_x_b,
     parameters: dict,
@@ -734,6 +910,8 @@ def evaluate_landing_horizons(
     rate: float,
     mean_in: np.ndarray,
     std_in: np.ndarray,
+    mean_acc: np.ndarray,
+    std_acc: np.ndarray,
     mean_xs: np.ndarray,
     std_xs: np.ndarray,
 ) -> tuple[dict[str, dict], list[dict]]:
@@ -749,6 +927,8 @@ def evaluate_landing_horizons(
         usable.append((path, inputs, targets, positions, times))
     reports: dict[str, dict] = {}
     rows: list[dict] = []
+    methods = method_order(model_specs)
+    primary = primary_method(model_specs)
     log("Running terminal landing-point horizon sweep...")
     for horizon in parse_landing_horizons(args):
         histories = []
@@ -793,20 +973,25 @@ def evaluate_landing_horizons(
         initial_vel_array = np.stack(initial_velocities)
         initial_time_array = np.asarray(initial_times, dtype=np.float32)
         base = baseline_acceleration(calculate_x_b, time_array, parameters, thrust_curve, rate)
-        predicted_residual = predict_residual(
-            model,
+        model_accelerations = predict_model_accelerations(
+            model_specs,
+            models,
             histories_array,
+            base,
             mean_in,
             std_in,
+            mean_acc,
+            std_acc,
+            mean_xs,
+            std_xs,
             horizon,
             args.batch_size,
             device,
             args.amp,
-        ) * std_xs + mean_xs
-        hybrid = base + predicted_residual
+        )
         last_acc = np.repeat(np.stack(previous_accelerations)[:, None, :], horizon, axis=1)
         acceleration_predictions = {
-            "GRU + RK4": hybrid,
+            **model_accelerations,
             "RK4 only": base,
             "Last acceleration": last_acc,
             "Oracle acceleration": actual_acc_array,
@@ -821,11 +1006,11 @@ def evaluate_landing_horizons(
             np.stack(lookback_times), np.stack(lookback_positions), time_array
         )
         trajectory_metrics = {
-            method: {axis: Metric() for axis in ["X", "Y", "Z", "3D"]} for method in METHODS
+            method: {axis: Metric() for axis in ["X", "Y", "Z", "3D"]} for method in methods
         }
         method_reports = {}
         endpoint_errors = {}
-        for method in METHODS:
+        for method in methods:
             prediction = position_predictions[method]
             for axis_index, axis in enumerate(["X", "Y", "Z"]):
                 trajectory_metrics[method][axis].add(
@@ -862,8 +1047,8 @@ def evaluate_landing_horizons(
                 "actual_landing_y": float(actual_terminal[index, 1]),
                 "actual_landing_z": float(actual_terminal[index, 2]),
             }
-            for method in METHODS:
-                key = method.lower().replace(" ", "_").replace("+", "plus")
+            for method in methods:
+                key = method_key(method)
                 predicted_terminal = position_predictions[method][index, -1, :]
                 error = endpoint_errors[method][index]
                 row[f"{key}_predicted_landing_x"] = float(predicted_terminal[0])
@@ -875,10 +1060,10 @@ def evaluate_landing_horizons(
                 row[f"{key}_landing_ground_spot_error_xy_m"] = float(np.linalg.norm(error[:2]))
                 row[f"{key}_final_difference_in_landing_3d_m"] = float(np.linalg.norm(error))
             rows.append(row)
-        gru_endpoint = method_reports["GRU + RK4"]["landing_endpoint_metrics"]
+        gru_endpoint = method_reports[primary]["landing_endpoint_metrics"]
         log(
             f"Landing horizon {horizon:4d} samples (~{np.median(lead_seconds):.1f}s): "
-            f"{len(names)} flights, GRU final difference RMSE="
+            f"{len(names)} flights, {primary} final difference RMSE="
             f"{gru_endpoint['final_difference_in_landing_rmse_3d_m']:.3f} m, "
             f"> {args.threshold:g} m="
             f"{gru_endpoint['landing_endpoint_failures_over_threshold']}/{len(names)}"
@@ -902,7 +1087,7 @@ def write_outputs(
         writer.writerows(rows)
     with (args.output_dir / "worst_gru_windows.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["rank", "file", "start_sample_after_downsample", "gru_window_rmse_m"])
+        writer.writerow(["rank", "file", "start_sample_after_downsample", "primary_window_rmse_m"])
         for rank, item in enumerate(worst, 1):
             writer.writerow([rank, item.flight, item.start, item.score])
     with (args.output_dir / "illustrative_gru_windows.csv").open("w", newline="", encoding="utf-8") as handle:
@@ -919,7 +1104,12 @@ def write_outputs(
             writer.writerows(landing_rows)
     lines = [
         "EXHAUSTIVE EXTERNAL TEST SUMMARY - XYZ POSITION AND ACCELERATION",
-        f"Model: {summary['model']}",
+        "Models:",
+        *(
+            f"  {item['name']}: {item['path']} ({item['output_mode']})"
+            for item in summary["models"]
+        ),
+        f"Primary neural method for examples: {summary['primary_method']}",
         f"External files evaluated: {summary['flights_evaluated']} "
         f"(skipped: {len(summary['skipped_files'])})",
         f"Windows evaluated: {summary['windows_evaluated']:,}",
@@ -928,7 +1118,7 @@ def write_outputs(
         "",
         "100-STEP POSITION FORECAST METRICS - 3D TRAJECTORY DISTANCE",
     ]
-    for method in METHODS:
+    for method in summary["methods"]:
         item = summary["position_metrics"][method]["3D"]
         lines.append(
             f"{method:20s} point_RMSE={item['point_rmse_m']:.3f} m  "
@@ -938,9 +1128,10 @@ def write_outputs(
             f"({item['failure_rate_pct']:.4f}%)"
         )
     lines.append("")
-    lines.append("GRU + RK4 POSITION BY AXIS")
+    primary = summary["primary_method"]
+    lines.append(f"{primary} POSITION BY AXIS")
     for axis in ["X", "Y", "Z", "3D"]:
-        item = summary["position_metrics"]["GRU + RK4"][axis]
+        item = summary["position_metrics"][primary][axis]
         lines.append(
             f"{axis:3s} point_RMSE={item['point_rmse_m']:.3f} m  "
             f"p99_window={item['p99_window_rmse_m']:.3f} m  "
@@ -963,7 +1154,7 @@ def write_outputs(
             if not report_item.get("flights"):
                 lines.append(f"{horizon:>5s} samples: no eligible flights")
                 continue
-            item = report_item["methods"]["GRU + RK4"]["landing_endpoint_metrics"]
+            item = report_item["methods"][primary]["landing_endpoint_metrics"]
             lines.append(
                 f"{int(horizon):5d} samples (~{report_item['lead_time_seconds_median']:.1f}s)  "
                 f"flights={report_item['flights']:3d}  "
@@ -992,7 +1183,12 @@ def render_plots(
 ) -> None:
     if args.no_plots:
         return
-    comparison = ["GRU + RK4", "Polynomial", "RK4 only", "Last acceleration"]
+    primary = summary["primary_method"]
+    comparison = [
+        method
+        for method in summary["neural_methods"] + ["Polynomial", "RK4 only", "Last acceleration"]
+        if method in summary["position_metrics"]
+    ]
     position = summary["position_metrics"]
     metric_3d = {method: position[method]["3D"] for method in comparison}
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
@@ -1026,18 +1222,18 @@ def render_plots(
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     axis_labels = ["X", "Y", "Z", "3D"]
-    bar_width = 0.2
+    bar_width = 0.8 / max(len(comparison), 1)
     x = np.arange(len(axis_labels))
     for index, method in enumerate(comparison):
         axes[0].bar(
-            x + (index - 1.5) * bar_width,
+            x + (index - (len(comparison) - 1) / 2) * bar_width,
             [position[method][axis]["point_rmse_m"] for axis in axis_labels],
             bar_width,
             color=COLORS[method],
             label=method,
         )
         axes[1].bar(
-            x + (index - 1.5) * bar_width,
+            x + (index - (len(comparison) - 1) / 2) * bar_width,
             [position[method][axis]["failure_rate_pct"] for axis in axis_labels],
             bar_width,
             color=COLORS[method],
@@ -1059,14 +1255,19 @@ def render_plots(
 
     acceleration = summary["acceleration_metrics"]
     fig, ax = plt.subplots(figsize=(10, 5))
-    acc_methods = ["GRU + RK4", "RK4 only", "Last acceleration"]
+    acc_methods = [
+        method
+        for method in summary["neural_methods"] + ["RK4 only", "Last acceleration"]
+        if method in acceleration
+    ]
     acceleration_labels = ["X", "Y", "Z", "Vector"]
+    acc_bar_width = 0.8 / max(len(acc_methods), 1)
     for index, method in enumerate(acc_methods):
         item = acceleration[method]
         ax.bar(
-            np.arange(4) + (index - 1) * 0.25,
+            np.arange(4) + (index - (len(acc_methods) - 1) / 2) * acc_bar_width,
             [item["x_rmse"], item["y_rmse"], item["z_rmse"], item["vector_rmse"]],
-            0.25,
+            acc_bar_width,
             color=COLORS[method],
             label=method,
         )
@@ -1081,7 +1282,7 @@ def render_plots(
 
     fig, ax = plt.subplots(figsize=(9, 5))
     for method in comparison:
-        key = method.lower().replace(" ", "_").replace("+", "plus")
+        key = method_key(method)
         values = np.array([float(row[f"{key}_3d_mean_window_rmse_m"]) for row in rows])
         values.sort()
         cdf = np.arange(1, len(values) + 1) / len(values)
@@ -1096,26 +1297,31 @@ def render_plots(
     fig.savefig(args.output_dir / "per_flight_error_cdf.png", dpi=180)
     plt.close(fig)
 
-    key = "gru_plus_rk4_3d_mean_window_rmse_m"
+    key = f"{method_key(primary)}_3d_mean_window_rmse_m"
     worst_rows = sorted(rows, key=lambda row: float(row[key]), reverse=True)[:30]
     fig, ax = plt.subplots(figsize=(12, 6))
     labels = [str(row["file"]).removeprefix("flight_").removesuffix(".parquet") for row in worst_rows][::-1]
     values = [float(row[key]) for row in worst_rows][::-1]
-    ax.barh(labels, values, color=COLORS["GRU + RK4"])
+    ax.barh(labels, values, color=COLORS[primary])
     ax.set_xlabel("Mean 100-step 3D distance RMSE (m)")
-    ax.set_title("30 Hardest Flights for GRU + RK4")
+    ax.set_title(f"30 Hardest Flights for {primary}")
     ax.grid(axis="x", alpha=0.3)
     fig.tight_layout()
     fig.savefig(args.output_dir / "hardest_flights.png", dpi=180)
     plt.close(fig)
 
     shown = worst[: min(3, len(worst))]
+    trajectory_methods = [
+        method
+        for method in summary["neural_methods"] + ["Polynomial", "RK4 only"]
+        if shown and method in shown[0].predictions
+    ]
     fig, axes = plt.subplots(len(shown), 3, figsize=(16, 3.8 * len(shown)), squeeze=False)
     for row_index, item in enumerate(shown):
         for axis_index, axis_label in enumerate(["X", "Y", "Z"]):
             axis = axes[row_index, axis_index]
             axis.plot(item.relative_time, item.actual[:, axis_index], color="black", linewidth=2.5, label="Actual")
-            for method in ["GRU + RK4", "Polynomial", "RK4 only"]:
+            for method in trajectory_methods:
                 axis.plot(
                     item.relative_time,
                     item.predictions[method][:, axis_index],
@@ -1134,11 +1340,16 @@ def render_plots(
 
     fig, axes = plt.subplots(len(illustrative), 3, figsize=(16, 3.8 * len(illustrative)), squeeze=False)
     requested = [0.25, 0.5, 1.0, args.threshold]
+    illustrative_methods = [
+        method
+        for method in summary["neural_methods"] + ["Polynomial", "RK4 only"]
+        if illustrative and method in illustrative[0].predictions
+    ]
     for row_index, (target, item) in enumerate(zip(requested, illustrative, strict=False)):
         for axis_index, axis_label in enumerate(["X", "Y", "Z"]):
             axis = axes[row_index, axis_index]
             axis.plot(item.relative_time, item.actual[:, axis_index], color="black", linewidth=2.5, label="Actual")
-            for method in ["GRU + RK4", "Polynomial", "RK4 only"]:
+            for method in illustrative_methods:
                 axis.plot(
                     item.relative_time,
                     item.predictions[method][:, axis_index],
@@ -1194,11 +1405,12 @@ def render_plots(
 
         longest = max(valid_horizons, key=lambda item: item["horizon_samples"])["horizon_samples"]
         longest_rows = [row for row in landing_rows if row["horizon_samples"] == longest]
+        primary_key = method_key(primary)
         fig, ax = plt.subplots(figsize=(9, 7))
         for row in longest_rows:
             actual_x, actual_y = row["actual_landing_x"], row["actual_landing_y"]
-            pred_x = row["gru_plus_rk4_predicted_landing_x"]
-            pred_y = row["gru_plus_rk4_predicted_landing_y"]
+            pred_x = row[f"{primary_key}_predicted_landing_x"]
+            pred_y = row[f"{primary_key}_predicted_landing_y"]
             ax.plot([actual_x, pred_x], [actual_y, pred_y], color="#cccccc", linewidth=0.6)
         ax.scatter(
             [row["actual_landing_x"] for row in longest_rows],
@@ -1208,11 +1420,11 @@ def render_plots(
             label="Actual landing",
         )
         ax.scatter(
-            [row["gru_plus_rk4_predicted_landing_x"] for row in longest_rows],
-            [row["gru_plus_rk4_predicted_landing_y"] for row in longest_rows],
-            color=COLORS["GRU + RK4"],
+            [row[f"{primary_key}_predicted_landing_x"] for row in longest_rows],
+            [row[f"{primary_key}_predicted_landing_y"] for row in longest_rows],
+            color=COLORS[primary],
             s=18,
-            label="GRU predicted landing",
+            label=f"{primary} predicted landing",
         )
         ax.set_title(f"Landing Spots at Longest Horizon ({longest} samples)")
         ax.set_xlabel("Landing X (m)")
@@ -1230,24 +1442,26 @@ def main() -> int:
     resolve_paths(args)
     log(f"Writing evaluation outputs to {args.output_dir}")
     log(f"Repository: {args.repo}")
-    log(f"Checkpoint: {args.model}")
     log(f"Scaler data: {args.scaler_data_dir}")
     log(f"External test data: {args.eval_data_dir}")
-    if not args.model.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {args.model}")
+    model_specs = configured_model_specs(args)
+    log("Neural checkpoints selected:")
+    for spec in model_specs:
+        log(f"  {spec.name}: {spec.path} ({spec.output_mode})")
     GRU, calculate_x_b, load_parameters, load_thrust_curve = configure_imports(args.repo)
     config_root = args.repo / "source_model" / "R7_SIMLE" / "R7_OUTPUT"
     parameters = load_parameters(config_root / "parameters.json")
     thrust_curve = load_thrust_curve(config_root / "thrust_source.csv")
     sampling_rate = 500.0 / args.downsample
     device, gpu_ids = select_device(args)
-    mean_in, std_in, mean_xs, std_xs, scaler_meta = compute_scalers(
+    mean_in, std_in, mean_acc, std_acc, mean_xs, std_xs, scaler_meta = compute_scalers(
         args, calculate_x_b, parameters, thrust_curve, sampling_rate
     )
-    model = load_network(GRU, args, device, gpu_ids)
+    models = load_networks(GRU, model_specs, device, gpu_ids)
     summary, rows, worst, illustrative = evaluate(
         args,
-        model,
+        model_specs,
+        models,
         device,
         calculate_x_b,
         parameters,
@@ -1255,13 +1469,16 @@ def main() -> int:
         sampling_rate,
         mean_in,
         std_in,
+        mean_acc,
+        std_acc,
         mean_xs,
         std_xs,
     )
     summary["scaler_metadata"] = scaler_meta
     landing_metrics, landing_rows = evaluate_landing_horizons(
         args,
-        model,
+        model_specs,
+        models,
         device,
         calculate_x_b,
         parameters,
@@ -1269,6 +1486,8 @@ def main() -> int:
         sampling_rate,
         mean_in,
         std_in,
+        mean_acc,
+        std_acc,
         mean_xs,
         std_xs,
     )
