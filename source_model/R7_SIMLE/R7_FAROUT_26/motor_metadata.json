@@ -1,0 +1,13 @@
+{
+  "source_rse": "/Users/elukasiuk/Desktop/projects/pg-general/Rocket-trajectory-predictor/far_out_26_data/Majda-5.4kg-48bar.rse",
+  "points": 8140,
+  "burn_time_s": 8.139,
+  "total_impulse_ns": 11016.752571,
+  "propellant_mass_kg": 6.012830766,
+  "initial_motor_mass_kg": 34.458221139,
+  "effective_isp_s": 186.83315144238296,
+  "peak_thrust_n": 4068.904763,
+  "avg_thrust_n": 1353.413957,
+  "parameters": "/Users/elukasiuk/Desktop/projects/pg-general/Rocket-trajectory-predictor/far_out_26_data/actual_motor_config_from_rse/parameters.json",
+  "thrust_curve": "/Users/elukasiuk/Desktop/projects/pg-general/Rocket-trajectory-predictor/far_out_26_data/actual_motor_config_from_rse/thrust_source.csv"
+}
