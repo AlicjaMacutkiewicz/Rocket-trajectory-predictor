@@ -1,5 +1,7 @@
-import pandas as pd
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+from matplotlib.widgets import Slider
 
 def latlon_to_local(lat, lon, lat0, lon0):
     lat = np.radians(lat)
@@ -14,26 +16,100 @@ def latlon_to_local(lat, lon, lat0, lon0):
 
     return east, north
 
-
 if __name__ == "__main__":
-    gnssinfo = pd.read_csv("gnssinfo.csv")
-    flightinfo = pd.read_csv("flightinfo.csv")
+    gnss = pd.read_csv("gnssinfo.csv")
+    filtered = pd.read_csv("filteredDataInfo.csv")
 
-    lat0 = gnssinfo.iloc[0]["latitude"]
-    lon0 = gnssinfo.iloc[0]["longitude"]
+    if "satellites" in gnss.columns:
+        # tutaj usuwam bledy gps
+        # prosta heurystyka; im mniej satelit tym gorsza pozycja
+        gnss = gnss[gnss["satellites"] >= 6].copy()
 
-    gnssinfo["x"] = 0.0
-    gnssinfo["y"] = 0.0
+    lat0 = gnss.iloc[0]["latitude"]
+    lon0 = gnss.iloc[0]["longitude"]
 
-    gnssinfo["x"], gnssinfo["y"] = latlon_to_local(gnssinfo["latitude"].values, gnssinfo["longitude"].values, lat0, lon0)
+    x, y = latlon_to_local(gnss["latitude"].values, gnss["longitude"].values, lat0, lon0)
 
-    # i tu jest problem bo probkowania sa rozne i trzeba interpolowac
-    gnssinfo["z"] = np.interp(gnssinfo["ts"], flightinfo["ts"], flightinfo["height"])
+    gnss["x"] = x
+    gnss["y"] = y
 
-    gnssinfo["z"] -= gnssinfo["z"].iloc[0]
+    # ze wzgledu na rozne probkowanie to trzeba interpolowac wysokosc ale jest to tak jakby ok
+    gnss["z"] = np.interp(gnss["ts"], filtered["ts"], filtered["filteredAltitudeAGL"])
 
-    result = gnssinfo[["ts", "x", "y", "z"]]
+    gnss["x"] -= gnss["x"].iloc[0]
+    gnss["y"] -= gnss["y"].iloc[0]
+    gnss["z"] -= gnss["z"].iloc[0]
 
-    print(result.head())
+    trajectory = gnss[["ts", "x", "y", "z"]]
 
-    result.to_csv("trajectory_meters.csv", index=False)
+    trajectory.to_csv("trajectory.csv", index=False)
+
+    # dalsza czesc to taki lady wykresik obrotowy
+
+    fig = plt.figure(figsize=(10, 9))
+    ax = fig.add_subplot(111, projection="3d")
+
+    plt.subplots_adjust(bottom=0.18)
+
+    ax.plot(
+        trajectory["x"],
+        trajectory["y"],
+        trajectory["z"],
+        color="green",
+        linewidth=2
+    )
+
+    ax.scatter(
+        trajectory["x"].iloc[0],
+        trajectory["y"].iloc[0],
+        trajectory["z"].iloc[0],
+        color="green",
+        s=50
+    )
+
+    ax.scatter(
+        trajectory["x"].iloc[-1],
+        trajectory["y"].iloc[-1],
+        trajectory["z"].iloc[-1],
+        color="red",
+        s=50
+    )
+
+    ax.set_xlabel("East [m]")
+    ax.set_ylabel("North [m]")
+    ax.set_zlabel("Altitude [m]")
+
+    ax.set_title("3D Trajectory")
+
+    ax.view_init(elev=30, azim=-60)
+
+    ax_elev = plt.axes((0.15, 0.08, 0.7, 0.03))
+    ax_azim = plt.axes((0.15, 0.03, 0.7, 0.03))
+
+    slider_elev = Slider(
+        ax=ax_elev,
+        label="Elevation",
+        valmin=0,
+        valmax=90,
+        valinit=30
+    )
+
+    slider_azim = Slider(
+        ax=ax_azim,
+        label="Azimuth",
+        valmin=-180,
+        valmax=180,
+        valinit=-60
+    )
+
+    def update(val):
+        ax.view_init(
+            elev=slider_elev.val,
+            azim=slider_azim.val
+        )
+        fig.canvas.draw_idle()
+
+    slider_elev.on_changed(update)
+    slider_azim.on_changed(update)
+
+    plt.show()
