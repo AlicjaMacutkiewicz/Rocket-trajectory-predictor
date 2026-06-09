@@ -2,6 +2,7 @@ import calendar
 import datetime
 import json
 import os
+import copy
 import random
 import sys
 
@@ -381,15 +382,14 @@ def parallel_generator(
     stochastic_motor_params,
     acceleration_thresholds,
     angular_velocity_thresholds,
+    fuel_min,
+    fuel_max
 ):
     N = len(date_table)
     indices = range(N)
 
     with open(json_path, encoding="utf-8") as file:
         model_data = json.load(file)
-
-    base_motor = init_base_motor_from_JSON(model_data, thrust_path)
-    stochastic_motor = init_stochastic_motor(base_motor, stochastic_motor_params)
 
     def worker(i):
         current_date = date_table[i]
@@ -405,12 +405,25 @@ def parallel_generator(
             # profiler = cProfile.Profile()
             # profiler.enable()
 
+
+            # mała uwaga do wiktora z przyszłości zastanow sie nad nadpisywaniem jsona i hard kopiowaniem go 
+            # dorbanoc 
             np.random.seed(i)
+            
+            rng = np.random.default_rng(i)
+            fuel_fraction = rng.uniform(fuel_min , fuel_max)
+            
+            temp_model_data = copy.deepcopy(model_data)
+
+            temp_model_data["motors"]["grain_initial_height"] *= fuel_fraction
+
+            base_motor = init_base_motor_from_JSON(temp_model_data, thrust_path)
+            stochastic_motor = init_stochastic_motor(base_motor, stochastic_motor_params)
 
             sampled_motor = stochastic_motor.create_object()
             stochastic_motor._set_stochastic(seed=i)
 
-            rocket = init_rocket_from_JSON(model_data, drag_path, sampled_motor)
+            rocket = init_rocket_from_JSON(temp_model_data, drag_path, sampled_motor)
             rocket = add_sensors_to_rocket(rocket, sensor_list)
 
             sl_file = yearly_files[current_date.year]["single"]
@@ -458,12 +471,32 @@ def main():
     year_start = 1940
     year_end = 1941
 
+    fuel_min = 1.0
+    fuel_max = 1.0
+
     args = sys.argv[1:]
 
     if "test" in args:
         TEST_FLAG = True
         Log.print_warning("running in test mode")
         args.remove("test")
+
+    # Fuel option examples :
+    # --fuel 60-70 (generates flights with randomly selected fuel percentage in this case beatwean 60% and 70%)
+    # --fuel 67 (generates flights with strict 60% fuel val)
+
+    if "--fuel" in args:
+        idx = args.index("--fuel")
+        fuel_val = args[idx + 1]
+        if "-" in fuel_val:
+            f_min, f_max = fuel_val.split("-")
+            fuel_min , fuel_max = float(f_min) / 100.0, float(f_max) / 100.0
+        else:
+            fuel_min = float(fuel_val)
+            fuel_max = fuel_min
+        args.pop(idx+1)
+        args.remove("--fuel")
+        Log.print_info(f"fuel level is set to: {fuel_min*100}% - {fuel_max*100}%")
     try:
         if len(args) >= 2:
             year_start = int(args[0])
@@ -564,6 +597,8 @@ def main():
         stochastic_motor_params=stochastic_motor_params,
         acceleration_thresholds=acceleration_thresholds,
         angular_velocity_thresholds=angular_velocity_thresholds,
+        fuel_min = fuel_min,
+        fuel_max = fuel_max
     )
 
     successful_dates = [d for d in results if d is not None]
