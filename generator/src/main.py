@@ -368,6 +368,12 @@ def prefetch_weather_environments(date_table, environment_data):
     return prefetched_envs
 
 
+
+#for those who come afer
+#te zmiany pozwalaja wytrenowac ten model ale oglnie to powinno byc wykonane znacznie bardziej etycznie i programistycznie
+#postaram sie to zrobic jutro ale to jest kwestia zmienienia kilku znaczacych rzeczy w grzesiu
+
+
 def parallel_generator(
     amount_in_parrallel,
     date_table,
@@ -377,8 +383,10 @@ def parallel_generator(
     environment_data,
     heading,
     rail_length,
-    sensor_list,
-    thrust_path,
+    sensor_list,  
+    thrust_path_100, #to rozwiazanie jest lopatologiczne ale no mamy tylko dwa pliki csv jeden dla normalnego tankowania drugi dla tego na konkursie
+    thrust_path_60,  #todo zmienic to na mape klucz -> stopien zatankowania, wartosc -> plik csv
+    prob_full_fuel,  #zmiany ktore prowadziłem wczeniej (fuel_min, fuel_max) sa teraz useless ale przy roziazaniu bardziej "clean", beda uzyteczne dlatego poki co sa w kodzie
     stochastic_motor_params,
     acceleration_thresholds,
     angular_velocity_thresholds,
@@ -411,12 +419,26 @@ def parallel_generator(
             np.random.seed(i)
             
             rng = np.random.default_rng(i)
-            fuel_fraction = rng.uniform(fuel_min , fuel_max)
+
+            #As i said wczesniej to bedzie zmienione soon
+            if rng.random() < prob_full_fuel:
+                thrust_path = thrust_path_100
+                fuel_fraction = 1.0
+            else: 
+                thrust_path = thrust_path_60
+                fuel_fraction = 0.6
+
+
+            # fuel_fraction = rng.uniform(fuel_min , fuel_max)
             
+            #dla osob zastanawiajacych sie czemu kopia
+            #każdy proces musi mieć osobny plik json ponieważ go modyfikujemy
+            #czy da sie to zrobić jako osobą zmienną? tak
+            #czy powinniśmy tak zrobić, tbh nie wiem, ponieważ funkcje konfuguracyjne z pliku json beda wtedy troche nie ładne pozdraiwam
             temp_model_data = copy.deepcopy(model_data)
 
             temp_model_data["motors"]["grain_initial_height"] *= fuel_fraction
-
+            
             base_motor = init_base_motor_from_JSON(temp_model_data, thrust_path)
             stochastic_motor = init_stochastic_motor(base_motor, stochastic_motor_params)
 
@@ -593,7 +615,9 @@ def main():
         heading=heading,
         rail_length=rail_length,
         sensor_list=sensor_list,
-        thrust_path=paths["source_model_path"]["thrust_source"],
+        thrust_path_100=paths["source_model_path"]["thrust_source_100"],
+        thrust_path_60=paths["source_model_path"]["thrust_source_60"],
+        prob_full_fuel=0.6,
         stochastic_motor_params=stochastic_motor_params,
         acceleration_thresholds=acceleration_thresholds,
         angular_velocity_thresholds=angular_velocity_thresholds,
@@ -617,6 +641,16 @@ def main():
     formatted_time = str(datetime.timedelta(seconds=int(total_seconds)))
     print(f"total processing time: {formatted_time}")
 
+
+#Again moze nawet dziś to zrobie ale chce żeby osoby czytające ten commit rozumialy o co mi chodzi 
+#Zalecenia fryderyka fazbera:
+#problem jest taki że dla danego poziomu paliwa wypada mieć no csvke z ciągiem 
+#aktulanie (z tego co wiem) mamy 2 takie pliki jeden normalny a drugi dla niezatankowanego (60%)
+#no i teraz mamy hardcoded dwie sciezki (thrust_path_100,60)
+#celem tej zmiany jest just odpalenie grzegora sprawdzenie czy sama idea dziala
+#nie zmiania to fakut ze zrobie z tego clean solution ktore bedzie zakladac dynamiczne dodawanie sciezek z csv 
+#i generator bedzie je dopieral na podstawie zakresu ktory pwrowadzilem wczenisej
+#(fuel_min , fuel_max)
 
 if __name__ == "__main__":
     mp.set_start_method("spawn", force=True)
